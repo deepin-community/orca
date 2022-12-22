@@ -1,0 +1,20 @@
+# List of source files containing translatable strings.
+# Please keep this file sorted alphabetically.
+orca-autostart.desktop.in
+src/orca/braille_rolenames.py
+src/orca/brltablenames.py
+src/orca/chnames.py
+src/orca/cmdnames.py
+src/orca/colornames.py
+src/orca/guilabels.py
+src/orca/keynames.py
+src/orca/keybindings.py
+src/orca/mathsymbols.py
+src/orca/messages.py
+src/orca/notification_messages.py
+src/orca/object_properties.py
+src/orca/orca-find.ui
+src/orca/orca-setup.ui
+src/orca/phonnames.py
+src/orca/text_attribute_names.py
+src/orca/tutorialgenerator.py
