@@ -25,49 +25,24 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2011 The Orca Team."
 __license__   = "LGPL"
 
-import orca.scripts.default as default
-import pyatspi
-
-########################################################################
-#                                                                      #
-# The xfwm4 script class.                                              #
-#                                                                      #
-########################################################################
+from orca.scripts import default
+from orca.ax_object import AXObject
+from orca.ax_utilities import AXUtilities
 
 class Script(default.Script):
+    """Custom script for xfwm4."""
 
-    def __init__(self, app):
-        """Creates a new script for the given application.
+    def on_text_inserted(self, event):
+        """Callback for object:text-changed:insert accessibility events."""
 
-        Arguments:
-        - app: the application to create a script for.
-        """
-
-        default.Script.__init__(self, app)
-
-    def onTextInserted(self, event):
-        """Called whenever text is inserted into an object. Overridden
-        here so that we will speak each item as the user is switching
-        windows.
-
-        Arguments:
-        - event: the Event
-        """
-
-        if event.source.getRole() != pyatspi.ROLE_LABEL:
-            default.Script.onTextInserted(self, event)
+        if not AXUtilities.is_label(event.source):
+            default.Script.on_text_inserted(self, event)
             return
 
-        self.presentMessage(event.source.name)
+        self.presentMessage(AXObject.get_name(event.source))
 
-    def onTextDeleted(self, event):
-        """Called whenever text is deleted from an object. Overridden
-        here because we wish to ignore text deletion events associated
-        with window switching.
+    def on_text_deleted(self, event):
+        """Callback for object:text-changed:delete accessibility events."""
 
-        Arguments:
-        - event: the Event
-        """
-
-        if event.source.getRole() != pyatspi.ROLE_LABEL:
-            default.Script.onTextDeleted(self, event)
+        if not AXUtilities.is_label(event.source):
+            default.Script.on_text_deleted(self, event)

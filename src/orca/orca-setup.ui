@@ -1354,22 +1354,6 @@
                               </packing>
                             </child>
                             <child>
-                              <object class="GtkCheckButton" id="speakMultiCaseStringsAsWordsCheckButton">
-                                <property name="label" translatable="yes" comments="Translators: multicase strings are StringsWithWordsMashedTogetherLikeThis.">Speak multicase strings as wor_ds</property>
-                                <property name="visible">True</property>
-                                <property name="can_focus">True</property>
-                                <property name="receives_default">False</property>
-                                <property name="use_underline">True</property>
-                                <property name="active">True</property>
-                                <property name="draw_indicator">True</property>
-                                <signal name="toggled" handler="checkButtonToggled" swapped="no"/>
-                              </object>
-                              <packing>
-                                <property name="left_attach">0</property>
-                                <property name="top_attach">1</property>
-                              </packing>
-                            </child>
-                            <child>
                               <object class="GtkCheckButton" id="speakNumbersAsDigitsCheckButton">
                                 <property name="label" translatable="yes" comments="Translators: If this setting is enabled, 123 will be spoken as the individual digits 1 2 3; otherwise, it will be sent to the synthesizer and (likely) spoken as one hundred and twenty three.">Speak _numbers as digits</property>
                                 <property name="visible">True</property>
@@ -1382,7 +1366,7 @@
                               </object>
                               <packing>
                                 <property name="left_attach">0</property>
-                                <property name="top_attach">2</property>
+                                <property name="top_attach">1</property>
                               </packing>
                             </child>
                             <child>
@@ -3093,59 +3077,6 @@
                             <property name="can_focus">False</property>
                             <property name="hexpand">True</property>
                             <property name="vexpand">True</property>
-                            <child>
-                              <object class="GtkGrid" id="textAttributesButtonGrid">
-                                <property name="visible">True</property>
-                                <property name="can_focus">False</property>
-                                <child>
-                                  <object class="GtkButton" id="textSelectAllButton">
-                                    <property name="label" translatable="yes">_Speak all</property>
-                                    <property name="can_focus">True</property>
-                                    <property name="receives_default">True</property>
-                                    <property name="border_width">5</property>
-                                    <property name="use_underline">True</property>
-                                    <signal name="clicked" handler="textSelectAllButtonClicked" swapped="no"/>
-                                  </object>
-                                  <packing>
-                                    <property name="left_attach">0</property>
-                                    <property name="top_attach">0</property>
-                                  </packing>
-                                </child>
-                                <child>
-                                  <object class="GtkButton" id="textUnselectAllButton">
-                                    <property name="label" translatable="yes">Speak _none</property>
-                                    <property name="can_focus">True</property>
-                                    <property name="receives_default">True</property>
-                                    <property name="border_width">5</property>
-                                    <property name="use_underline">True</property>
-                                    <signal name="clicked" handler="textUnselectAllButtonClicked" swapped="no"/>
-                                  </object>
-                                  <packing>
-                                    <property name="left_attach">1</property>
-                                    <property name="top_attach">0</property>
-                                  </packing>
-                                </child>
-                                <child>
-                                  <object class="GtkButton" id="textResetButton">
-                                    <property name="label" translatable="yes">_Reset</property>
-                                    <property name="visible">True</property>
-                                    <property name="can_focus">True</property>
-                                    <property name="receives_default">True</property>
-                                    <property name="border_width">5</property>
-                                    <property name="use_underline">True</property>
-                                    <signal name="clicked" handler="textResetButtonClicked" swapped="no"/>
-                                  </object>
-                                  <packing>
-                                    <property name="left_attach">2</property>
-                                    <property name="top_attach">0</property>
-                                  </packing>
-                                </child>
-                              </object>
-                              <packing>
-                                <property name="left_attach">0</property>
-                                <property name="top_attach">1</property>
-                              </packing>
-                            </child>
                             <child>
                               <object class="GtkScrolledWindow" id="textAttributesScrolledWindow">
                                 <property name="visible">True</property>

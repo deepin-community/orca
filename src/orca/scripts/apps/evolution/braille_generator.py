@@ -19,50 +19,54 @@
 # Free Software Foundation, Inc., Franklin Street, Fifth Floor,
 # Boston MA  02110-1301 USA.
 
+# pylint: disable=duplicate-code
+
+"""Produces braille presentation for accessible objects."""
+
 __id__        = "$Id$"
 __version__   = "$Revision$"
 __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2015 Igalia, S.L."
 __license__   = "LGPL"
 
-import orca.braille as braille
-import orca.braille_generator as braille_generator
-import orca.scripts.toolkits.WebKitGtk as WebKitGtk
+from orca import braille
+from orca import braille_generator
+from orca import debug
+from orca.scripts import web
 
-class BrailleGenerator(WebKitGtk.BrailleGenerator, braille_generator.BrailleGenerator):
+class BrailleGenerator(web.BrailleGenerator, braille_generator.BrailleGenerator):
+    """Produces braille presentation for accessible objects."""
 
-    def __init__(self, script):
-        super().__init__(script)
-        self._cache = {}
+    @staticmethod
+    def log_generator_output(func):
+        """Decorator for logging."""
 
-    def _isMessageListToggleCell(self, obj):
-        cached = self._cache.get(hash(obj), {})
-        rv = cached.get("isMessageListToggleCell")
-        if rv is None:
-            rv = self._script.utilities.isMessageListToggleCell(obj)
-            cached["isMessageListToggleCell"] = rv
-            self._cache[hash(obj)] = cached
-
-        return rv
-
-    def _generateRealActiveDescendantDisplayedText(self, obj, **args):
-        if self._isMessageListToggleCell(obj):
+        def wrapper(*args, **kwargs):
+            result = func(*args, **kwargs)
+            tokens = [f"EVOLUTION BRAILLE GENERATOR: {func.__name__}:", result]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return result
+        return wrapper
+    @log_generator_output
+    def _generate_real_active_descendant_displayed_text(self, obj, **args):
+        if self._script.utilities.is_message_list_status_cell(obj):
             return []
 
-        return super()._generateRealActiveDescendantDisplayedText(obj, **args)
+        return super()._generate_real_active_descendant_displayed_text(obj, **args)
 
-    def generateBraille(self, obj, **args):
-        self._cache = {}
-        result, focusedRegion = super().generateBraille(obj, **args)
-        self._cache = {}
+    def generate_braille(self, obj, **args):
+        result, focused_region = super().generate_braille(obj, **args)
+        if not result or focused_region != result[0]:
+            return [result, focused_region]
 
-        if not result or focusedRegion != result[0]:
-            return [result, focusedRegion]
+        def has_obj(x):
+            return isinstance(x, (braille.Component, braille.Text))
 
-        hasObj = lambda x: isinstance(x, (braille.Component, braille.Text))
-        isObj = lambda x: self._script.utilities.isSameObject(obj, x.accessible)
-        matches = [r for r in result if hasObj(r) and isObj(r)]
+        def is_obj(x):
+            return obj == x.accessible
+
+        matches = [r for r in result if has_obj(r) and is_obj(r)]
         if matches:
-            focusedRegion = matches[0]
+            focused_region = matches[0]
 
-        return [result, focusedRegion]
+        return [result, focused_region]

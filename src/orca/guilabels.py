@@ -29,7 +29,7 @@ __copyright__ = "Copyright (c) 2004-2009 Sun Microsystems Inc." \
                 "Copyright (c) 2010-2013 The Orca Team"
 __license__   = "LGPL"
 
-from .orca_i18n import _, C_
+from .orca_i18n import _, C_, ngettext
 
 # Translators: This string appears on a button in a dialog. "Activating" the
 # selected item will perform the action that one would expect to occur if the
@@ -233,10 +233,66 @@ ECHO_CHARACTER = _("Enable echo by cha_racter")
 ECHO_DIACRITICAL = _("Enable non-spacing _diacritical keys")
 
 # Translators: Orca has a "find" feature which allows the user to search the
+# active application for on screen text and widgets. This string is the title
+# of the dialog box.
+FIND_DIALOG_TITLE = _("Find")
+KB_GROUP_FIND = FIND_DIALOG_TITLE
+
+# Translators: Orca has a "find" feature which allows the user to search the
 # active application for on screen text and widgets. This label is associated
-# with the setting to begin the search from the current location rather than
-# from the top of the screen.
+# with the text entry where the user types the term to search for.
+FIND_SEARCH_FOR = _("_Search for:")
+
+# Translators: Orca has a "find" feature which allows the user to search the
+# active application for on screen text and widgets. This label is associated
+# with a group of options related to where the search should begin. The options
+# are to begin the search from the current location or from the top of the window.
+FIND_START_FROM = _("Start from:")
+
+# Translators: Orca has a "find" feature which allows the user to search the
+# active application for on screen text and widgets. This label is associated
+# with the radio button to begin the search from the current location rather
+# than from the top of the window.
 FIND_START_AT_CURRENT_LOCATION = _("C_urrent location")
+
+# Translators: Orca has a "find" feature which allows the user to search the
+# active application for on screen text and widgets. This label is associated
+# with the radio button to begin the search from the top of the window rather
+# than the current location.
+FIND_START_AT_TOP_OF_WINDOW = _("_Top of window")
+
+# Translators: Orca has a "find" feature which allows the user to search the
+# active application for on screen text and widgets. This label is associated
+# with a group of options related to the direction of the search. The options
+# are to search backwards and to wrap.
+FIND_SEARCH_DIRECTION = _("Search direction:")
+
+# Translators: Orca has a "find" feature which allows the user to search the
+# active application for on screen text and widgets. This label is associated
+# with the checkbox to perform the search in the reverse direction.
+FIND_SEARCH_BACKWARDS = _("Search _backwards")
+
+# Translators: Orca has a "find" feature which allows the user to search the
+# active application for on screen text and widgets. This label is associated
+# with the checkbox to wrap around when the top/bottom of the window has been
+# reached.
+FIND_WRAP_AROUND = _("_Wrap around")
+
+# Translators: Orca has a "find" feature which allows the user to search the
+# active application for on screen text and widgets. This label is associated
+# with a group of options related to what constitutes a match. The options are
+# to match case and to match the entire word only.
+FIND_MATCH_OPTIONS = _("Match options:")
+
+# Translators: Orca has a "find" feature which allows the user to search the
+# active application for on screen text and widgets. This label is associated
+# with the checkbox to make the search case-sensitive.
+FIND_MATCH_CASE = _("_Match case")
+
+# Translators: Orca has a "find" feature which allows the user to search the
+# active application for on screen text and widgets. This label is associated
+# with the checkbox to only match if the full word consists of the search term.
+FIND_MATCH_ENTIRE_WORD = _("Match _entire word only")
 
 # Translators: This is the label for a spinbutton. This option allows the user
 # to specify the number of matched characters that must be present before Orca
@@ -274,6 +330,20 @@ KB_HEADER_KEY_BINDING = _("Key Binding")
 # to, for instance, web browsing.
 KB_GROUP_DEFAULT = C_("keybindings", "Default")
 
+# Translators: This string is a label for the group of Orca commands which
+# are related to debugging.
+KB_GROUP_DEBUGGING_TOOLS = C_("keybindings", "Debugging Tools")
+
+# Translators: This string is a label for the group of Orca commands which
+# are related to its "learn mode". Please use the same translation as done
+# in cmdnames.py
+KB_GROUP_LEARN_MODE = C_("keybindings", "Learn mode")
+
+# Translators: This string is a label for the group of Orca commands which
+# are related to presenting and performing the accessible actions associated
+# with the current object.
+KB_GROUP_ACTIONS = _("Actions")
+
 # Translators: An external braille device has buttons on it that permit the
 # user to create input gestures from the braille device. The braille bindings
 # are what determine the actions Orca will take when the user presses these
@@ -281,8 +351,84 @@ KB_GROUP_DEFAULT = C_("keybindings", "Default")
 KB_GROUP_BRAILLE = _("Braille Bindings")
 
 # Translators: This string is a label for the group of Orca commands which
-# do not currently have an associated key binding.
-KB_GROUP_UNBOUND = _("Unbound")
+# are related to saving and jumping among objects via "bookmarks".
+KB_GROUP_BOOKMARKS = _("Bookmarks")
+
+# Translators: This string is a label for the group of Orca commands which
+# are related to the clipboard.
+KB_GROUP_CLIPBOARD = _("Clipboard")
+
+# Translators: This string is a label for the group of Orca commands which
+# are related to presenting the date and time.
+KB_GROUP_DATE_AND_TIME = _("Date and time")
+
+# Translators: Orca has a sleep mode which causes Orca to essentially behave as
+# if it were not running for a given application. Some use cases include self-
+# voicing apps with associated commands (e.g. ChromeVox) and VMs. In the former
+# case, the self-voicing app is expected to provide all needed commands as well
+# as speech and braille. In the latter case, we want to ensure that Orca's
+# commands and speech/braille do not interfere with that of the VM and any
+# screen reader being used in that VM. Thus when an application is being used
+# in sleep mode, nearly all Orca commands become unbound/free, and nothing is
+# spoken or brailled. But if the user toggles sleep mode off or switches to
+# another application window, Orca commands, speech, and braille immediately
+# resume working. This string is a label for the group of Orca commands which
+# are related to sleep mode.
+KB_GROUP_SLEEP_MODE = _("Sleep mode")
+
+# Translators: This string is a label for the group of Orca commands which
+# are related to presenting the object under the mouse pointer in speech
+# and/or braille. The translation should be consistent with the string
+# used in cmdnames.py.
+KB_GROUP_MOUSE_REVIEW = _("Mouse review")
+
+# Translators: This string is a label for the group of Orca commands which
+# are related to object navigation.
+KB_GROUP_OBJECT_NAVIGATION = _("Object navigation")
+
+# Translators: This string is a label for a group of Orca commands which are
+# related to presenting information about the system, such as date, time,
+# battery status, CPU status, etc.
+KB_GROUP_SYSTEM_INFORMATION = _("System information")
+
+# Translators: This string is a label for the group of Orca commands which
+# are related to table navigation, such as moving to the next cell in a
+# given direction.
+KB_GROUP_TABLE_NAVIGATION = _("Table navigation")
+
+# Translators: This string is a label for the group of Orca commands which
+# are related to presenting information about the current location, such as
+# the title, status bar, and default button of the current window; the
+# name, role, and location of the currently-focused object; the selected
+# text in the currently-focused object; etc.
+KB_GROUP_WHERE_AM_I = _("Object details")
+
+# Translators: This string is a label for the group of Orca commands which
+# are related to Orca's "flat review" feature. This feature allows the blind
+# user to explore the text in a window in a 2D fashion. That is, Orca treats
+# all the text from all objects in a window (e.g., buttons, labels, etc.) as
+# a sequence of words in a sequence of lines.  The flat review feature allows
+# the user to explore this text by the {previous,next} {line,word,character}.
+# Those commands are all listed under this group label.
+KB_GROUP_FLAT_REVIEW = _("Flat review")
+
+# Translators: This string is a label for the group of Orca commands which
+# are related to Orca's speech and verbosity settings. This group of commands
+# allows on-the-fly configuration of how much (or little) Orca says about a
+# particular object, as well certain aspects of the voice with which things
+# are spoken.
+KB_GROUP_SPEECH_VERBOSITY = _("Speech and verbosity")
+
+# Translators: the 'flat review' feature of Orca allows the blind user to
+# explore the text in a window in a 2D fashion.  That is, Orca treats all
+# the text from all objects in a window (e.g., buttons, labels, etc.) as a
+# sequence of words in a sequence of lines.  The flat review feature allows
+# the user to explore this text by the {previous,next} {line,word,character}.
+# Normally the contents are navigated without leaving the application being
+# reviewed. There is a command which will place the entire contents of the
+# flat review representation into a text view to make it easy to review
+# and copy the text. This string is the title of the window with the text view.
+FLAT_REVIEW_CONTENTS = _("Flat review contents")
 
 # Translators: Modified is a table column header in Orca's preferences dialog.
 # This column contains a checkbox which indicates whether a key binding
@@ -292,6 +438,26 @@ KB_MODIFIED = C_("keybindings", "Modified")
 
 # Translators: This label refers to the keyboard layout (desktop or laptop).
 KEYBOARD_LAYOUT_DESKTOP = _("_Desktop")
+
+# Translators: Orca has a feature to list all of the notification messages
+# received, similar to the functionality gnome-shell provides when you press
+# Super+M, but it works in all desktop environments. Orca's list is a table
+# with two columns, one column for the text of the notification and one
+# column for the time of the notification. This string is a column header
+# for the text of the notifications.
+NOTIFICATIONS_COLUMN_HEADER = C_("notification presenter", "Notifications")
+
+# Translators: Orca has a feature to list all of the notification messages
+# received, similar to the functionality gnome-shell provides when you press
+# Super+M, but it works in all desktop environments. Orca's list is a table
+# with two columns, one column for the text of the notification and one
+# column for the time of the notification. This string is a column header
+# for the time, which will be relative (e.g. "10 minutes ago") or absolute.
+NOTIFICATIONS_RECEIVED_TIME = C_("notification presenter", "Received")
+
+# Translators: This string is a label for the group of Orca commands which
+# are associated with presenting notifications.
+KB_GROUP_NOTIFICATIONS = _("Notification presenter")
 
 # Translators: Orca's preferences can be configured on a per-application basis,
 # allowing users to customize Orca's behavior, keybindings, etc. to work one
@@ -493,6 +659,12 @@ SN_HEADER_HEADING = C_("structural navigation", "Heading")
 # Translators: Orca has a command that presents a list of structural navigation
 # objects in a dialog box so that users can navigate more quickly than they
 # could with native keyboard navigation. This is the title for a column which
+# contains the title associated with an iframe.
+SN_HEADER_IFRAME = C_("structural navigation", "Internal Frame")
+
+# Translators: Orca has a command that presents a list of structural navigation
+# objects in a dialog box so that users can navigate more quickly than they
+# could with native keyboard navigation. This is the title for a column which
 # contains the text (alt text, title, etc.) associated with an image.
 SN_HEADER_IMAGE = C_("structural navigation", "Image")
 
@@ -635,6 +807,11 @@ SN_TITLE_HEADING = C_("structural navigation", "Headings")
 # Translators: Orca has a command that presents a list of structural navigation
 # objects in a dialog box so that users can navigate more quickly than they
 # could with native keyboard navigation. This is the title of such a dialog box.
+SN_TITLE_IFRAME = C_("structural navigation", "Internal Frames")
+
+# Translators: Orca has a command that presents a list of structural navigation
+# objects in a dialog box so that users can navigate more quickly than they
+# could with native keyboard navigation. This is the title of such a dialog box.
 SN_TITLE_IMAGE = C_("structural navigation", "Images")
 
 # Translators: Orca has a command that presents a list of structural navigation
@@ -753,6 +930,10 @@ SPEECH_VOICE_TYPE_UPPERCASE = C_("VoiceType", "Uppercase")
 # system. (http://devel.freebsoft.org/speechd)
 SPEECH_DISPATCHER = _("Speech Dispatcher")
 
+# Translators this label refers to the name of particular speech synthesis
+# system. (https://github.com/eeejay/spiel)
+SPIEL = _("Spiel")
+
 # Translators: This is a label for a group of options related to Orca's behavior
 # when presenting an application's spell check dialog.
 SPELL_CHECK = C_("OptionGroup", "Spell Check")
@@ -834,3 +1015,13 @@ USE_STRUCTURAL_NAVIGATION = _("Enable _structural navigation")
 # Translators: This refers to the amount of information Orca provides about a
 # particular object that receives focus.
 VERBOSITY_LEVEL_BRIEF = _("Brie_f")
+
+def notifications_count(count):
+    """Returns the gui label representing the notifications count."""
+
+    # Translators: Orca has a feature to list all of the notification messages
+    # received, similar to the functionality gnome-shell provides when you press
+    # Super+M, but it works in all desktop environments. This string is the title
+    # of the dialog that contains the list of notification messages. The string
+    # substitution is for the number of messages in the list.
+    return ngettext("%d notification", "%d notifications", count) % count

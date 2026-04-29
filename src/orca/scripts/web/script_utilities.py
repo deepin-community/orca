@@ -25,25 +25,28 @@ __copyright__ = "Copyright (c) 2010 Joanmarie Diggs." \
                 "Copyright (c) 2014-2015 Igalia, S.L."
 __license__   = "LGPL"
 
+import gi
+gi.require_version("Atspi", "2.0")
+from gi.repository import Atspi
+
 import functools
-import pyatspi
 import re
 import time
 import urllib
 
 from orca import debug
-from orca import input_event
-from orca import messages
-from orca import mouse_review
-from orca import orca
-from orca import orca_state
+from orca import focus_manager
+from orca import input_event_manager
 from orca import script_utilities
-from orca import script_manager
-from orca import settings
 from orca import settings_manager
-
-_scriptManager = script_manager.getManager()
-_settingsManager = settings_manager.getManager()
+from orca.ax_component import AXComponent
+from orca.ax_document import AXDocument
+from orca.ax_hypertext import AXHypertext
+from orca.ax_object import AXObject
+from orca.ax_table import AXTable
+from orca.ax_text import AXText
+from orca.ax_utilities import AXUtilities
+from orca.ax_utilities_debugging import AXUtilitiesDebugging
 
 
 class Utilities(script_utilities.Utilities):
@@ -51,10 +54,9 @@ class Utilities(script_utilities.Utilities):
     def __init__(self, script):
         super().__init__(script)
 
-        self._objectAttributes = {}
-        self._currentTextAttrs = {}
         self._caretContexts = {}
         self._priorContexts = {}
+        self._canHaveCaretContextDecision = {}
         self._contextPathsRolesAndNames = {}
         self._paths = {}
         self._inDocumentContent = {}
@@ -63,48 +65,34 @@ class Utilities(script_utilities.Utilities):
         self._isContentEditableWithEmbeddedObjects = {}
         self._isCodeDescendant = {}
         self._isEntryDescendant = {}
+        self._hasGridDescendant = {}
         self._isGridDescendant = {}
         self._isLabelDescendant = {}
         self._isMenuDescendant = {}
         self._isNavigableToolTipDescendant = {}
         self._isToolBarDescendant = {}
         self._isWebAppDescendant = {}
-        self._isLayoutOnly = {}
         self._isFocusableWithMathChild = {}
-        self._mathNestingLevel = {}
         self._isOffScreenLabel = {}
+        self._labelIsAncestorOfLabelled = {}
         self._elementLinesAreSingleChars= {}
         self._elementLinesAreSingleWords= {}
-        self._hasNoSize = {}
         self._hasLongDesc = {}
         self._hasVisibleCaption = {}
-        self._hasDetails = {}
-        self._isDetails = {}
         self._isNonInteractiveDescendantOfControl = {}
-        self._hasUselessCanvasDescendant = {}
         self._isClickableElement = {}
-        self._isAnchor = {}
-        self._isEditableComboBox = {}
-        self._isErrorMessage = {}
-        self._isInlineIframeDescendant = {}
-        self._isInlineListItem = {}
         self._isInlineListDescendant = {}
-        self._isLandmark = {}
         self._isLink = {}
         self._isListDescendant = {}
         self._isNonNavigablePopup = {}
         self._isNonEntryTextWidget = {}
+        self._isCustomImage = {}
         self._isUselessImage = {}
         self._isRedundantSVG = {}
         self._isUselessEmptyElement = {}
         self._hasNameAndActionAndNoUsefulChildren = {}
         self._isNonNavigableEmbeddedDocument = {}
-        self._isParentOfNullChild = {}
         self._inferredLabels = {}
-        self._labelsForObject = {}
-        self._labelTargets = {}
-        self._displayedLabelText = {}
-        self._mimeType = {}
         self._preferDescriptionOverName = {}
         self._shouldFilter = {}
         self._shouldInferLabelFor = {}
@@ -115,89 +103,73 @@ class Utilities(script_utilities.Utilities):
         self._currentLineContents = None
         self._currentWordContents = None
         self._currentCharacterContents = None
-        self._lastQueuedLiveRegionEvent = None
         self._findContainer = None
-        self._statusBar = None
-        self._validChildRoles = {pyatspi.ROLE_LIST: [pyatspi.ROLE_LIST_ITEM]}
+        self._validChildRoles = {Atspi.Role.LIST: [Atspi.Role.LIST_ITEM]}
 
     def _cleanupContexts(self):
         toRemove = []
         for key, [obj, offset] in self._caretContexts.items():
-            if self.isZombie(obj):
+            if not AXObject.is_valid(obj):
                 toRemove.append(key)
 
         for key in toRemove:
             self._caretContexts.pop(key, None)
 
     def dumpCache(self, documentFrame=None, preserveContext=False):
-        if not documentFrame or self.isZombie(documentFrame):
+        if not AXObject.is_valid(documentFrame):
             documentFrame = self.documentFrame()
 
-        context = self._caretContexts.get(hash(documentFrame.parent))
+        documentFrameParent = AXObject.get_parent(documentFrame)
+        context = self._caretContexts.get(hash(documentFrameParent))
+        tokens = ["WEB: Clearing all cached info for", documentFrame,
+                  "Preserving context:", preserveContext, "Context:", context]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
-        msg = "WEB: Clearing all cached info for %s" % documentFrame
-        debug.println(debug.LEVEL_INFO, msg, True)
-
-        self._script.structuralNavigation.clearCache(documentFrame)
+        self._script.structural_navigation.clearCache(documentFrame)
         self.clearCaretContext(documentFrame)
         self.clearCachedObjects()
 
         if preserveContext and context:
-            msg = "WEB: Preserving context of %s, %i" % (context[0], context[1])
-            debug.println(debug.LEVEL_INFO, msg, True)
-            self._caretContexts[hash(documentFrame.parent)] = context
+            tokens = ["WEB: Preserving context of", context[0], ",", context[1]]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            self._caretContexts[hash(documentFrameParent)] = context
 
     def clearCachedObjects(self):
-        debug.println(debug.LEVEL_INFO, "WEB: cleaning up cached objects", True)
-        self._objectAttributes = {}
+        debug.print_message(debug.LEVEL_INFO, "WEB: cleaning up cached objects", True)
         self._inDocumentContent = {}
         self._inTopLevelWebApp = {}
         self._isTextBlockElement = {}
         self._isContentEditableWithEmbeddedObjects = {}
         self._isCodeDescendant = {}
         self._isEntryDescendant = {}
+        self._hasGridDescendant = {}
         self._isGridDescendant = {}
         self._isLabelDescendant = {}
         self._isMenuDescendant = {}
         self._isNavigableToolTipDescendant = {}
         self._isToolBarDescendant = {}
         self._isWebAppDescendant = {}
-        self._isLayoutOnly = {}
         self._isFocusableWithMathChild = {}
-        self._mathNestingLevel = {}
         self._isOffScreenLabel = {}
+        self._labelIsAncestorOfLabelled = {}
         self._elementLinesAreSingleChars= {}
         self._elementLinesAreSingleWords= {}
-        self._hasNoSize = {}
         self._hasLongDesc = {}
         self._hasVisibleCaption = {}
-        self._hasDetails = {}
-        self._isDetails = {}
-        self._hasUselessCanvasDescendant = {}
         self._isNonInteractiveDescendantOfControl = {}
         self._isClickableElement = {}
-        self._isAnchor = {}
-        self._isEditableComboBox = {}
-        self._isErrorMessage = {}
-        self._isInlineIframeDescendant = {}
-        self._isInlineListItem = {}
         self._isInlineListDescendant = {}
-        self._isLandmark = {}
         self._isLink = {}
         self._isListDescendant = {}
         self._isNonNavigablePopup = {}
         self._isNonEntryTextWidget = {}
+        self._isCustomImage = {}
         self._isUselessImage = {}
         self._isRedundantSVG = {}
         self._isUselessEmptyElement = {}
         self._hasNameAndActionAndNoUsefulChildren = {}
         self._isNonNavigableEmbeddedDocument = {}
-        self._isParentOfNullChild = {}
         self._inferredLabels = {}
-        self._labelsForObject = {}
-        self._labelTargets = {}
-        self._displayedLabelText = {}
-        self._mimeType = {}
         self._preferDescriptionOverName = {}
         self._shouldFilter = {}
         self._shouldInferLabelFor = {}
@@ -205,11 +177,10 @@ class Utilities(script_utilities.Utilities):
         self._treatAsDiv = {}
         self._paths = {}
         self._contextPathsRolesAndNames = {}
+        self._canHaveCaretContextDecision = {}
         self._cleanupContexts()
         self._priorContexts = {}
-        self._lastQueuedLiveRegionEvent = None
         self._findContainer = None
-        self._statusBar = None
 
     def clearContentCache(self):
         self._currentObjectContents = None
@@ -217,26 +188,20 @@ class Utilities(script_utilities.Utilities):
         self._currentLineContents = None
         self._currentWordContents = None
         self._currentCharacterContents = None
-        self._currentTextAttrs = {}
 
-    def isDocument(self, obj):
-        if not obj:
-            return False
+    def isDocument(self, obj, excludeDocumentFrame=True):
+        if AXUtilities.is_document_web(obj) or AXUtilities.is_embedded(obj):
+            return True
 
-        roles = [pyatspi.ROLE_DOCUMENT_FRAME, pyatspi.ROLE_DOCUMENT_WEB, pyatspi.ROLE_EMBEDDED]
+        if not excludeDocumentFrame:
+            return AXUtilities.is_document_frame(obj)
 
-        try:
-            rv = obj.getRole() in roles
-        except:
-            msg = "WEB: Exception getting role for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            rv = False
-
-        return rv
+        return False
 
     def inDocumentContent(self, obj=None):
         if not obj:
-            obj = orca_state.locusOfFocus
+            obj = focus_manager.get_manager().get_locus_of_focus()
+
 
         if self.isDocument(obj):
             return True
@@ -250,165 +215,38 @@ class Utilities(script_utilities.Utilities):
         self._inDocumentContent[hash(obj)] = rv
         return rv
 
-    def _getDocumentsEmbeddedBy(self, frame):
-        if not frame:
-            return []
-
-        isEmbeds = lambda r: r.getRelationType() == pyatspi.RELATION_EMBEDS
-        try:
-            relations = list(filter(isEmbeds, frame.getRelationSet()))
-        except:
-            msg = "ERROR: Exception getting embeds relation for %s" % frame
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return []
-
-        if not relations:
-            return []
-
-        relation = relations[0]
-        targets = [relation.getTarget(i) for i in range(relation.getNTargets())]
-        if not targets:
-            return []
-
-        return list(filter(self.isDocument, targets))
-
-    def sanityCheckActiveWindow(self):
-        app = self._script.app
-        try:
-            windowInApp = orca_state.activeWindow in app
-        except:
-            msg = "ERROR: Exception checking if %s is in %s" % (orca_state.activeWindow, app)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            windowInApp = False
-
-        if windowInApp:
-            return True
-
-        msg = "WARNING: %s is not in %s" % (orca_state.activeWindow, app)
-        debug.println(debug.LEVEL_INFO, msg, True)
-
-        try:
-            script = _scriptManager.getScript(app, orca_state.activeWindow)
-            msg = "WEB: Script for active Window is %s" % script
-            debug.println(debug.LEVEL_INFO, msg, True)
-        except:
-            msg = "ERROR: Exception getting script for active window"
-            debug.println(debug.LEVEL_INFO, msg, True)
-        else:
-            if type(script) == type(self._script):
-                attrs = script.getTransferableAttributes()
-                for attr, value in attrs.items():
-                    msg = "WEB: Setting %s to %s" % (attr, value)
-                    debug.println(debug.LEVEL_INFO, msg, True)
-                    setattr(self._script, attr, value)
-
-        window = self.activeWindow(app)
-        try:
-            self._script.app = window.getApplication()
-            msg = "WEB: updating script's app to %s" % self._script.app
-            debug.println(debug.LEVEL_INFO, msg, True)
-        except:
-            msg = "ERROR: Exception getting app for %s" % window
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        orca_state.activeWindow = window
-        return True
-
     def activeDocument(self, window=None):
-        isShowing = lambda x: x and x.getState().contains(pyatspi.STATE_SHOWING)
-        documents = self._getDocumentsEmbeddedBy(window or orca_state.activeWindow)
-        documents = list(filter(isShowing, documents))
+        window = window or focus_manager.get_manager().get_active_window()
+        documents = list(filter(self.isDocument, AXUtilities.get_embeds(window)))
+        documents = list(filter(AXUtilities.is_showing, documents))
         if len(documents) == 1:
             return documents[0]
         return None
 
     def documentFrame(self, obj=None):
-        if not obj and self.sanityCheckActiveWindow():
+        if not obj:
             document = self.activeDocument()
             if document:
                 return document
 
-        return self.getDocumentForObject(obj or orca_state.locusOfFocus)
-
-    def documentFrameURI(self, documentFrame=None):
-        documentFrame = documentFrame or self.documentFrame()
-        if documentFrame and not self.isZombie(documentFrame):
-            try:
-                document = documentFrame.queryDocument()
-            except NotImplementedError:
-                msg = "WEB: %s does not implement document interface" % documentFrame
-                debug.println(debug.LEVEL_INFO, msg, True)
-            except:
-                msg = "ERROR: Exception querying document interface of %s" % documentFrame
-                debug.println(debug.LEVEL_INFO, msg, True)
-            else:
-                return document.getAttributeValue('DocURL') or document.getAttributeValue('URI')
-
-        return ""
-
-    def isPlainText(self, documentFrame=None):
-        return self.mimeType(documentFrame) == "text/plain"
-
-    def mimeType(self, documentFrame=None):
-        documentFrame = documentFrame or self.documentFrame()
-        rv = self._mimeType.get(hash(documentFrame))
-        if rv is not None:
-            return rv
-
-        try:
-            document = documentFrame.queryDocument()
-            attrs = dict([attr.split(":", 1) for attr in document.getAttributes()])
-        except NotImplementedError:
-            msg = "WEB: %s does not implement document interface" % documentFrame
-            debug.println(debug.LEVEL_INFO, msg, True)
-        except:
-            msg = "ERROR: Exception getting document attributes of %s" % documentFrame
-            debug.println(debug.LEVEL_INFO, msg, True)
-        else:
-            rv = attrs.get("MimeType")
-            msg = "WEB: MimeType of %s is '%s'" % (documentFrame, rv)
-            self._mimeType[hash(documentFrame)] = rv
-
-        return rv
+        return self.getDocumentForObject(obj or focus_manager.get_manager().get_locus_of_focus())
 
     def grabFocusWhenSettingCaret(self, obj):
-        try:
-            role = obj.getRole()
-            state = obj.getState()
-            childCount = obj.childCount
-        except:
-            msg = "WEB: Exception getting role, state, and childCount for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
         # To avoid triggering popup lists.
-        if role == pyatspi.ROLE_ENTRY:
+        if AXUtilities.is_entry(obj):
             return False
 
-        if role == pyatspi.ROLE_IMAGE:
-            isLink = lambda x: x and x.getRole() == pyatspi.ROLE_LINK
-            return pyatspi.utils.findAncestor(obj, isLink) is not None
+        if AXUtilities.is_image(obj):
+            return AXObject.find_ancestor(obj, AXUtilities.is_link) is not None
 
-        if role == pyatspi.ROLE_HEADING and childCount == 1:
-            return self.isLink(obj[0])
+        if AXUtilities.is_heading(obj) and AXObject.get_child_count(obj) == 1:
+            return self.isLink(AXObject.get_child(obj, 0))
 
-        return state.contains(pyatspi.STATE_FOCUSABLE)
-
-    def grabFocus(self, obj):
-        try:
-            obj.queryComponent().grabFocus()
-        except NotImplementedError:
-            msg = "WEB: %s does not implement the component interface" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-        except:
-            msg = "WEB: Exception grabbing focus on %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+        return AXUtilities.is_focusable(obj)
 
     def setCaretPosition(self, obj, offset, documentFrame=None):
-        if self._script.flatReviewContext:
-            self._script.toggleFlatReviewMode()
-
+        if self._script.get_flat_review_presenter().is_active():
+            self._script.get_flat_review_presenter().quit()
         grabFocus = self.grabFocusWhenSettingCaret(obj)
 
         obj, offset = self.findFirstCaretContext(obj, offset)
@@ -416,267 +254,65 @@ class Utilities(script_utilities.Utilities):
         if self._script.focusModeIsSticky():
             return
 
-        oldFocus = orca_state.locusOfFocus
-        self.clearTextSelection(oldFocus)
-        orca.setLocusOfFocus(None, obj, notifyScript=False)
+        old_focus = focus_manager.get_manager().get_locus_of_focus()
+        AXText.clear_all_selected_text(old_focus)
+        focus_manager.get_manager().set_locus_of_focus(None, obj, notify_script=False)
         if grabFocus:
-            self.grabFocus(obj)
+            AXObject.grab_focus(obj)
 
-        # Don't use queryNonEmptyText() because we need to try to force-update focus.
-        if "Text" in pyatspi.listInterfaces(obj):
-            try:
-                obj.queryText().setCaretOffset(offset)
-            except:
-                msg = "WEB: Exception setting caret to %i in %s" % (offset, obj)
-                debug.println(debug.LEVEL_INFO, msg, True)
-            else:
-                msg = "WEB: Caret set to %i in %s" % (offset, obj)
-                debug.println(debug.LEVEL_INFO, msg, True)
-
-        if self._script.useFocusMode(obj, oldFocus) != self._script.inFocusMode():
+        AXText.set_caret_offset(obj, offset)
+        if self._script.useFocusMode(obj, old_focus) != self._script.inFocusMode():
             self._script.togglePresentationMode(None)
 
+        # TODO - JD: Can we remove this?
         if obj:
-            obj.clearCache()
+            AXObject.clear_cache(obj, False, "Set caret in object.")
 
         # TODO - JD: This is private.
-        self._script._saveFocusedObjectInfo(obj)
+        self._script._save_focused_object_info(obj)
 
     def getNextObjectInDocument(self, obj, documentFrame):
         if not obj:
             return None
 
-        for relation in obj.getRelationSet():
-            if relation.getRelationType() == pyatspi.RELATION_FLOWS_TO:
-                return relation.getTarget(0)
+        targets = AXUtilities.get_flows_to(obj)
+        if targets:
+            return targets[0]
 
         if obj == documentFrame:
             obj, offset = self.getCaretContext(documentFrame)
-            for child in documentFrame:
-                if self.characterOffsetInParent(child) > offset:
+            for child in AXObject.iter_children(documentFrame):
+                if AXHypertext.get_character_offset_in_parent(child) > offset:
                     return child
 
-        if obj and obj.childCount:
-            return obj[0]
+        if AXObject.get_child_count(obj):
+            return AXObject.get_child(obj, 0)
 
-        nextObj = None
-        while obj and not nextObj:
-            index = obj.getIndexInParent() + 1
-            if 0 < index < obj.parent.childCount:
-                nextObj = obj.parent[index]
-            elif obj.parent != documentFrame:
-                obj = obj.parent
-            else:
-                break
-
-        return nextObj
-
-    def getPreviousObjectInDocument(self, obj, documentFrame):
-        if not obj:
-            return None
-
-        for relation in obj.getRelationSet():
-            if relation.getRelationType() == pyatspi.RELATION_FLOWS_FROM:
-                return relation.getTarget(0)
-
-        if obj == documentFrame:
-            obj, offset = self.getCaretContext(documentFrame)
-            for child in documentFrame:
-                if self.characterOffsetInParent(child) < offset:
-                    return child
-
-        index = obj.getIndexInParent() - 1
-        if not 0 <= index < obj.parent.childCount:
-            obj = obj.parent
-            index = obj.getIndexInParent() - 1
-
-        previousObj = obj.parent[index]
-        while previousObj and previousObj.childCount:
-            previousObj = previousObj[previousObj.childCount - 1]
-
-        return previousObj
-
-    def getTopOfFile(self):
-        return self.findFirstCaretContext(self.documentFrame(), 0)
-
-    def getBottomOfFile(self):
-        obj = self.getLastObjectInDocument(self.documentFrame())
-        offset = 0
-        text = self.queryNonEmptyText(obj)
-        if text:
-            offset = text.characterCount - 1
-
-        while obj:
-            lastobj, lastoffset = self.nextContext(obj, offset)
-            if not lastobj:
-                break
-            obj, offset = lastobj, lastoffset
-
-        return [obj, offset]
-
-    def getLastObjectInDocument(self, documentFrame):
-        try:
-            lastChild = documentFrame[documentFrame.childCount - 1]
-        except:
-            lastChild = documentFrame
-        while lastChild:
-            lastObj = self.getNextObjectInDocument(lastChild, documentFrame)
-            if lastObj and lastObj != lastChild:
-                lastChild = lastObj
-            else:
-                break
-
-        return lastChild
-
-    def objectAttributes(self, obj, useCache=True):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().objectAttributes(obj)
-
-        if useCache:
-            rv = self._objectAttributes.get(hash(obj))
-            if rv is not None:
-                return rv
-
-        try:
-            rv = dict([attr.split(':', 1) for attr in obj.getAttributes()])
-        except:
-            rv = {}
-
-        self._objectAttributes[hash(obj)] = rv
-        return rv
-
-    def getRoleDescription(self, obj, isBraille=False):
-        attrs = self.objectAttributes(obj)
-        rv = attrs.get('roledescription', '')
-        if isBraille:
-            rv = attrs.get('brailleroledescription', rv)
-
-        return rv
-
-    def nodeLevel(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().nodeLevel(obj)
-
-        rv = -1
-        if not (self.inMenu(obj) or obj.getRole() == pyatspi.ROLE_HEADING):
-            attrs = self.objectAttributes(obj)
-            # ARIA levels are 1-based; non-web content is 0-based. Be consistent.
-            rv = int(attrs.get('level', 0)) -1
-
-        return rv
-
-    def _shouldCalculatePositionAndSetSize(self, obj):
-        return True
-
-    def getPositionAndSetSize(self, obj, **args):
-        posinset = self.getPositionInSet(obj)
-        setsize = self.getSetSize(obj)
-        if posinset is not None and setsize is not None:
-            # ARIA posinset is 1-based
-            return posinset - 1, setsize
-
-        if self._shouldCalculatePositionAndSetSize(obj):
-            return super().getPositionAndSetSize(obj, **args)
-
-        return -1, -1
-
-    def getPositionInSet(self, obj):
-        attrs = self.objectAttributes(obj, False)
-        position = attrs.get('posinset')
-        if position is not None:
-            return int(position)
-
-        if obj.getRole() == pyatspi.ROLE_TABLE_ROW:
-            rowindex = attrs.get('rowindex')
-            if rowindex is None and obj.childCount:
-                roles = self._cellRoles()
-                cell = pyatspi.findDescendant(obj, lambda x: x and x.getRole() in roles)
-                rowindex = self.objectAttributes(cell, False).get('rowindex')
-
-            if rowindex is not None:
-                return int(rowindex)
+        while obj and obj != documentFrame:
+            nextObj = AXObject.get_next_sibling(obj)
+            if nextObj:
+                return nextObj
+            obj = AXObject.get_parent(obj)
 
         return None
-
-    def getSetSize(self, obj):
-        attrs = self.objectAttributes(obj, False)
-        setsize = attrs.get('setsize')
-        if setsize is not None:
-            return int(setsize)
-
-        if obj.getRole() == pyatspi.ROLE_TABLE_ROW:
-            rows, cols = self.rowAndColumnCount(self.getTable(obj))
-            if rows != -1:
-                return rows
-
-        return None
-
-    def _getID(self, obj):
-        attrs = self.objectAttributes(obj)
-        return attrs.get('id')
-
-    def _getDisplayStyle(self, obj):
-        attrs = self.objectAttributes(obj)
-        return attrs.get('display')
-
-    def _getTag(self, obj):
-        attrs = self.objectAttributes(obj)
-        return attrs.get('tag')
-
-    def _getXMLRoles(self, obj):
-        attrs = self.objectAttributes(obj)
-        return attrs.get('xml-roles', '').split()
 
     def inFindContainer(self, obj=None):
         if not obj:
-            obj = orca_state.locusOfFocus
+            obj = focus_manager.get_manager().get_locus_of_focus()
 
         if self.inDocumentContent(obj):
             return False
 
         return super().inFindContainer(obj)
 
-    def isEmpty(self, obj):
+    def is_empty(self, obj):
         if not self.isTextBlockElement(obj):
             return False
 
-        if obj.name:
+        if AXObject.get_name(obj):
             return False
 
-        return self.queryNonEmptyText(obj, False) is None
-
-    def isHidden(self, obj):
-        attrs = self.objectAttributes(obj)
-        return attrs.get('hidden', False)
-
-    def _isOrIsIn(self, child, parent):
-        if not (child and parent):
-            return False
-
-        if child == parent:
-            return True
-
-        return pyatspi.findAncestor(child, lambda x: x == parent)
-
-    def isShowingAndVisible(self, obj):
-        rv = super().isShowingAndVisible(obj)
-        if rv or not self.inDocumentContent(obj):
-            return rv
-
-        if not mouse_review.reviewer.inMouseEvent:
-            if not self._isOrIsIn(orca_state.locusOfFocus, obj):
-                return rv
-
-            msg = "WEB: %s contains locusOfFocus but not showing and visible" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-
-        obj.clearCache()
-        rv = super().isShowingAndVisible(obj)
-        if rv:
-            msg = "WEB: Clearing cache fixed state of %s. Missing event?" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-
-        return rv
+        return not self.treatAsTextObject(obj, False)
 
     def isTextArea(self, obj):
         if not self.inDocumentContent(obj):
@@ -685,40 +321,21 @@ class Utilities(script_utilities.Utilities):
         if self.isLink(obj):
             return False
 
-        try:
-            role = obj.getRole()
-            state = obj.getState()
-        except:
-            msg = "WEB: Exception getting role and state for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        if role == pyatspi.ROLE_COMBO_BOX \
-           and state.contains(pyatspi.STATE_EDITABLE) \
-           and not obj.childCount:
+        if AXUtilities.is_combo_box(obj) \
+           and AXUtilities.is_editable(obj) \
+           and not AXObject.get_child_count(obj):
             return True
 
-        if role in self._textBlockElementRoles():
+        if AXObject.get_role(obj) in self._textBlockElementRoles():
             document = self.getDocumentForObject(obj)
-            if document and document.getState().contains(pyatspi.STATE_EDITABLE):
+            if AXUtilities.is_editable(document):
                 return True
 
         return super().isTextArea(obj)
 
-    def isReadOnlyTextArea(self, obj):
-        # NOTE: This method is deliberately more conservative than isTextArea.
-        if obj.getRole() != pyatspi.ROLE_ENTRY:
-            return False
-
-        state = obj.getState()
-        readOnly = state.contains(pyatspi.STATE_FOCUSABLE) \
-                   and not state.contains(pyatspi.STATE_EDITABLE)
-
-        return readOnly
-
     def setCaretOffset(self, obj, characterOffset):
         self.setCaretPosition(obj, characterOffset)
-        self._script.updateBraille(obj)
+        self._script.update_braille(obj)
 
     def nextContext(self, obj=None, offset=-1, skipSpace=False):
         if not obj:
@@ -726,10 +343,8 @@ class Utilities(script_utilities.Utilities):
 
         nextobj, nextoffset = self.findNextCaretInOrder(obj, offset)
         if skipSpace:
-            text = self.queryNonEmptyText(nextobj)
-            while text and text.getText(nextoffset, nextoffset + 1) in [" ", "\xa0"]:
+            while AXText.get_character_at_offset(nextobj, nextoffset)[0].isspace():
                 nextobj, nextoffset = self.findNextCaretInOrder(nextobj, nextoffset)
-                text = self.queryNonEmptyText(nextobj)
 
         return nextobj, nextoffset
 
@@ -739,21 +354,18 @@ class Utilities(script_utilities.Utilities):
 
         prevobj, prevoffset = self.findPreviousCaretInOrder(obj, offset)
         if skipSpace:
-            text = self.queryNonEmptyText(prevobj)
-            while text and text.getText(prevoffset, prevoffset + 1) in [" ", "\xa0"]:
+            while AXText.get_character_at_offset(prevobj, prevoffset)[0].isspace():
                 prevobj, prevoffset = self.findPreviousCaretInOrder(prevobj, prevoffset)
-                text = self.queryNonEmptyText(prevobj)
 
         return prevobj, prevoffset
 
     def lastContext(self, root):
         offset = 0
-        text = self.queryNonEmptyText(root)
-        if text:
-            offset = text.characterCount - 1
+        if self.treatAsTextObject(root):
+            offset = AXText.get_character_count(root) - 1
 
         def _isInRoot(o):
-            return o == root or pyatspi.utils.findAncestor(o, lambda x: x == root)
+            return o == root or AXObject.find_ancestor(o, lambda x: x == root)
 
         obj = root
         while obj:
@@ -799,86 +411,36 @@ class Utilities(script_utilities.Utilities):
 
         return True
 
-    @staticmethod
-    def getExtents(obj, startOffset, endOffset):
+    def getExtents(self, obj, startOffset, endOffset):
         if not obj:
             return [0, 0, 0, 0]
 
         result = [0, 0, 0, 0]
-        try:
-            text = obj.queryText()
-            if text.characterCount and 0 <= startOffset < endOffset:
-                result = list(text.getRangeExtents(startOffset, endOffset, 0))
-        except NotImplementedError:
-            pass
-        except:
-            msg = "WEB: Exception getting range extents for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return [0, 0, 0, 0]
-        else:
+        if self.treatAsTextObject(obj) and 0 <= startOffset < endOffset:
+            rect = AXText.get_range_rect(obj, startOffset, endOffset)
+            result = [rect.x, rect.y, rect.width, rect.height]
             if result[0] and result[1] and result[2] == 0 and result[3] == 0 \
-               and text.getText(startOffset, endOffset).strip():
-                msg = "WEB: Suspected bogus range extents for %s (chars: %i, %i): %s" % \
-                    (obj, startOffset, endOffset, result)
-                debug.println(debug.LEVEL_INFO, msg, True)
-            elif text.characterCount:
+               and AXText.get_substring(obj, startOffset, endOffset).strip():
+                tokens = ["WEB: Suspected bogus range extents for",
+                          obj, "(chars:", startOffset, ",", endOffset, "):", result]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            else:
                 return result
 
-        role = obj.getRole()
-        try:
-            parentRole = obj.parent.getRole()
-        except:
-            msg = "WEB: Exception getting role of parent (%s) of %s" % (obj.parent, obj)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            parentRole = None
-
-        if role in [pyatspi.ROLE_MENU, pyatspi.ROLE_LIST_ITEM] \
-           and parentRole in [pyatspi.ROLE_COMBO_BOX, pyatspi.ROLE_LIST_BOX]:
-            try:
-                ext = obj.parent.queryComponent().getExtents(0)
-            except NotImplementedError:
-                msg = "WEB: %s does not implement the component interface" % obj.parent
-                debug.println(debug.LEVEL_INFO, msg, True)
-                return [0, 0, 0, 0]
-            except:
-                msg = "WEB: Exception getting extents for %s" % obj.parent
-                debug.println(debug.LEVEL_INFO, msg, True)
-                return [0, 0, 0, 0]
+        parent = AXObject.get_parent(obj)
+        if (AXUtilities.is_menu(obj) or AXUtilities.is_list_item(obj)) \
+            and (AXUtilities.is_combo_box(parent) or AXUtilities.is_list_box(parent)):
+            ext = AXComponent.get_rect(parent)
         else:
-            try:
-                ext = obj.queryComponent().getExtents(0)
-            except NotImplementedError:
-                msg = "WEB: %s does not implement the component interface" % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
-                return [0, 0, 0, 0]
-            except:
-                msg = "WEB: Exception getting extents for %s" % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
-                return [0, 0, 0, 0]
+            ext = AXComponent.get_rect(obj)
 
         return [ext.x, ext.y, ext.width, ext.height]
 
-    def descendantAtPoint(self, root, x, y, coordType=None):
-        if coordType is None:
-            coordType = pyatspi.DESKTOP_COORDS
-
-        result = None
-        if self.isDocument(root):
-            result = self.accessibleAtPoint(root, x, y, coordType)
-
-        if result is None:
-            result = super().descendantAtPoint(root, x, y, coordType)
-
-        if self.isListItemMarker(result) or self.isStaticTextLeaf(result):
-            return result.parent
-
-        return result
-
     def _preserveTree(self, obj):
-        if not (obj and obj.childCount):
+        if not (obj and AXObject.get_child_count(obj)):
             return False
 
-        if self.isMathTopLevel(obj):
+        if AXUtilities.is_math(obj):
             return True
 
         return False
@@ -887,46 +449,56 @@ class Utilities(script_utilities.Utilities):
         if not self.inDocumentContent(obj):
             return super().expandEOCs(obj, startOffset, endOffset)
 
-        text = self.queryNonEmptyText(obj)
-        if not text:
+        if self.hasGridDescendant(obj):
+            tokens = ["WEB: not expanding EOCs:", obj, "has grid descendant"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return ""
+
+        if not self.treatAsTextObject(obj):
             return ""
 
         if self._preserveTree(obj):
-            utterances = self._script.speechGenerator.generateSpeech(obj)
-            return self._script.speechGenerator.utterancesToString(utterances)
+            utterances = self._script.speech_generator.generate_speech(obj)
+            return self._script.speech_generator.utterances_to_string(utterances)
 
         return super().expandEOCs(obj, startOffset, endOffset).strip()
 
-    def substring(self, obj, startOffset, endOffset):
-        if not self.inDocumentContent(obj):
-            return super().substring(obj, startOffset, endOffset)
-
-        text = self.queryNonEmptyText(obj)
-        if text:
-            return text.getText(startOffset, endOffset)
-
-        return ""
-
-    def textAttributes(self, acc, offset, get_defaults=False):
-        attrsForObj = self._currentTextAttrs.get(hash(acc)) or {}
-        if offset in attrsForObj:
-            return attrsForObj.get(offset)
-
+    def textAttributes(self, acc, offset=None, get_defaults=False):
         attrs = super().textAttributes(acc, offset, get_defaults)
-        objAttributes = self.objectAttributes(acc, False)
+        objAttributes = AXObject.get_attributes_dict(acc, False)
         for key in self._script.attributeNamesDict.keys():
             value = objAttributes.get(key)
             if value is not None:
                 attrs[0][key] = value
 
-        self._currentTextAttrs[hash(acc)] = {offset:attrs}
         return attrs
 
-    def localizeTextAttribute(self, key, value):
-        if key == "justification" and value == "justify":
-            value = "fill"
+    def adjustContentsForLanguage(self, contents):
+        rv = []
+        for content in contents:
+            split = self.splitSubstringByLanguage(*content[0:3])
+            for start, end, string, language, dialect in split:
+                rv.append([content[0], start, end, string])
 
-        return super().localizeTextAttribute(key, value)
+        return rv
+
+    def getLanguageAndDialectFromTextAttributes(self, obj, startOffset=0, endOffset=-1):
+        rv = super().getLanguageAndDialectFromTextAttributes(obj, startOffset, endOffset)
+        if rv or obj is None:
+            return rv
+
+        # Embedded objects such as images and certain widgets won't implement the text interface
+        # and thus won't expose text attributes. Therefore try to get the info from the parent.
+        parent = AXObject.get_parent(obj)
+        if parent is None or not self.inDocumentContent(parent):
+            return rv
+
+        start = AXHypertext.get_link_start_offset(obj)
+        end = AXHypertext.get_link_end_offset(obj)
+        language, dialect = self.getLanguageAndDialectForSubstring(parent, start, end)
+        rv.append((0, 1, language, dialect))
+
+        return rv
 
     def findObjectInContents(self, obj, offset, contents, usingCache=False):
         if not obj or not contents:
@@ -945,7 +517,7 @@ class Utilities(script_utilities.Utilities):
         if not self.isTextBlockElement(obj):
             return -1
 
-        child = self.getChildAtOffset(obj, offset)
+        child = AXHypertext.get_child_at_offset(obj, offset)
         if child and not self.isTextBlockElement(child):
             matches = [x for x in contents if x[0] == child]
             if len(matches) == 1:
@@ -964,8 +536,8 @@ class Utilities(script_utilities.Utilities):
         if self.getTopLevelDocumentForObject(result) != self.getTopLevelDocumentForObject(obj):
             return None
 
-        msg = "WEB: Previous object for %s is %s." % (obj, result)
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: Previous object for", obj, "is", result, "."]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
         return result
 
     def findNextObject(self, obj):
@@ -979,8 +551,8 @@ class Utilities(script_utilities.Utilities):
         if self.getTopLevelDocumentForObject(result) != self.getTopLevelDocumentForObject(obj):
             return None
 
-        msg = "WEB: Next object for %s is %s." % (obj, result)
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: Next object for", obj, "is", result, "."]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
         return result
 
     def isNonEntryTextWidget(self, obj):
@@ -988,23 +560,23 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        roles = [pyatspi.ROLE_CHECK_BOX,
-                 pyatspi.ROLE_CHECK_MENU_ITEM,
-                 pyatspi.ROLE_MENU,
-                 pyatspi.ROLE_MENU_ITEM,
-                 pyatspi.ROLE_PAGE_TAB,
-                 pyatspi.ROLE_RADIO_MENU_ITEM,
-                 pyatspi.ROLE_RADIO_BUTTON,
-                 pyatspi.ROLE_PUSH_BUTTON,
-                 pyatspi.ROLE_TOGGLE_BUTTON]
+        roles = [Atspi.Role.CHECK_BOX,
+                 Atspi.Role.CHECK_MENU_ITEM,
+                 Atspi.Role.MENU,
+                 Atspi.Role.MENU_ITEM,
+                 Atspi.Role.PAGE_TAB,
+                 Atspi.Role.RADIO_MENU_ITEM,
+                 Atspi.Role.RADIO_BUTTON,
+                 Atspi.Role.PUSH_BUTTON,
+                 Atspi.Role.TOGGLE_BUTTON]
 
-        role = obj.getRole()
+        role = AXObject.get_role(obj)
         if role in roles:
             rv = True
-        elif role == pyatspi.ROLE_LIST_ITEM:
-            rv = obj.parent.getRole() != pyatspi.ROLE_LIST
-        elif role == pyatspi.ROLE_TABLE_CELL:
-            if obj.getState().contains(pyatspi.STATE_EDITABLE):
+        elif role == Atspi.Role.LIST_ITEM:
+            rv = not AXUtilities.is_list(AXObject.get_parent(obj))
+        elif role == Atspi.Role.TABLE_CELL:
+            if AXUtilities.is_editable(obj):
                 rv = False
             else:
                 rv = not self.isTextBlockElement(obj)
@@ -1013,61 +585,52 @@ class Utilities(script_utilities.Utilities):
         return rv
 
     def treatAsTextObject(self, obj, excludeNonEntryTextWidgets=True):
-        if not obj or self.isDead(obj):
+        if not obj or AXObject.is_dead(obj):
             return False
 
         rv = self._treatAsTextObject.get(hash(obj))
         if rv is not None:
             return rv
 
-        rv = "Text" in pyatspi.listInterfaces(obj)
-        if not rv:
-            msg = "WEB: %s does not implement text interface" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if not AXObject.supports_text(obj):
+            return False
 
-        if not self.inDocumentContent(obj):
-            return rv
+        if not self.inDocumentContent(obj) or self._script.browseModeIsSticky():
+            return True
 
-        if rv and self._treatObjectAsWhole(obj, -1) and obj.name and not self.isCellWithNameFromHeader(obj):
-            msg = "WEB: Treating %s as non-text: named object treated as whole." % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+        rv = AXText.get_character_count(obj) > 0 or AXUtilities.is_editable(obj)
+        if rv and self._treatObjectAsWhole(obj, -1) and AXObject.get_name(obj) \
+            and not self.isCellWithNameFromHeader(obj):
+            tokens = ["WEB: Treating", obj, "as non-text: named object treated as whole."]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             rv = False
 
-        elif rv and not self.isLiveRegion(obj):
-            doNotQuery = [pyatspi.ROLE_LIST_BOX]
-            role = obj.getRole()
+        elif rv and not AXUtilities.is_live_region(obj):
+            doNotQuery = [Atspi.Role.LIST_BOX]
+            role = AXObject.get_role(obj)
             if rv and role in doNotQuery:
-                msg = "WEB: Treating %s as non-text due to role." % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
+                tokens = ["WEB: Treating", obj, "as non-text due to role."]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 rv = False
             if rv and excludeNonEntryTextWidgets and self.isNonEntryTextWidget(obj):
-                msg = "WEB: Treating %s as non-text: is non-entry text widget." % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
+                tokens = ["WEB: Treating", obj, "as non-text: is non-entry text widget."]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 rv = False
             if rv and (self.isHidden(obj) or self.isOffScreenLabel(obj)):
-                msg = "WEB: Treating %s as non-text: is hidden or off-screen label." % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
+                tokens = ["WEB: Treating", obj, "as non-text: is hidden or off-screen label."]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 rv = False
             if rv and self.isNonNavigableEmbeddedDocument(obj):
-                msg = "WEB: Treating %s as non-text: is non-navigable embedded document." % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
+                tokens = ["WEB: Treating", obj, "as non-text: is non-navigable embedded document."]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 rv = False
             if rv and self.isFakePlaceholderForEntry(obj):
-                msg = "WEB: Treating %s as non-text: is fake placeholder for entry." % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
+                tokens = ["WEB: Treating", obj, "as non-text: is fake placeholder for entry."]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 rv = False
 
         self._treatAsTextObject[hash(obj)] = rv
         return rv
-
-    def queryNonEmptyText(self, obj, excludeNonEntryTextWidgets=True):
-        if self._script.browseModeIsSticky():
-            return super().queryNonEmptyText(obj)
-
-        if not self.treatAsTextObject(obj, excludeNonEntryTextWidgets):
-            return None
-
-        return super().queryNonEmptyText(obj)
 
     def hasNameAndActionAndNoUsefulChildren(self, obj):
         if not (obj and self.inDocumentContent(obj)):
@@ -1078,16 +641,16 @@ class Utilities(script_utilities.Utilities):
             return rv
 
         rv = False
-        if self.hasExplicitName(obj) and "Action" in pyatspi.listInterfaces(obj):
-            for child in obj:
+        if AXUtilities.has_explicit_name(obj) and AXObject.supports_action(obj):
+            for child in AXObject.iter_children(obj):
                 if not self.isUselessEmptyElement(child) or self.isUselessImage(child):
                     break
             else:
                 rv = True
 
         if rv:
-            msg = "WEB: %s has name and action and no useful children" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB:", obj, "has name and action and no useful children"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
         self._hasNameAndActionAndNoUsefulChildren[hash(obj)] = rv
         return rv
@@ -1100,48 +663,42 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        try:
-            role = obj.getRole()
-            state = obj.getState()
-        except:
-            msg = "WEB: Exception getting role and state for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
+        role = AXObject.get_role(obj)
         rv = False
         roles = self._textBlockElementRoles()
-        roles.extend([pyatspi.ROLE_IMAGE, pyatspi.ROLE_CANVAS])
-        if role in roles and not state.contains(pyatspi.STATE_FOCUSABLE):
-            controls = [pyatspi.ROLE_CHECK_BOX,
-                        pyatspi.ROLE_CHECK_MENU_ITEM,
-                        pyatspi.ROLE_LIST_BOX,
-                        pyatspi.ROLE_MENU_ITEM,
-                        pyatspi.ROLE_RADIO_MENU_ITEM,
-                        pyatspi.ROLE_RADIO_BUTTON,
-                        pyatspi.ROLE_PUSH_BUTTON,
-                        pyatspi.ROLE_TOGGLE_BUTTON,
-                        pyatspi.ROLE_TREE_ITEM]
-            rv = pyatspi.findAncestor(obj, lambda x: x and x.getRole() in controls)
+        roles.extend([Atspi.Role.IMAGE, Atspi.Role.CANVAS])
+        if role in roles and not AXUtilities.is_focusable(obj):
+            controls = [Atspi.Role.CHECK_BOX,
+                        Atspi.Role.CHECK_MENU_ITEM,
+                        Atspi.Role.LIST_BOX,
+                        Atspi.Role.MENU_ITEM,
+                        Atspi.Role.RADIO_MENU_ITEM,
+                        Atspi.Role.RADIO_BUTTON,
+                        Atspi.Role.PUSH_BUTTON,
+                        Atspi.Role.TOGGLE_BUTTON,
+                        Atspi.Role.TREE_ITEM]
+            rv = AXObject.find_ancestor(obj, lambda x: AXObject.get_role(x) in controls)
 
         self._isNonInteractiveDescendantOfControl[hash(obj)] = rv
         return rv
 
     def _treatObjectAsWhole(self, obj, offset=None):
-        always = [pyatspi.ROLE_CHECK_BOX,
-                  pyatspi.ROLE_CHECK_MENU_ITEM,
-                  pyatspi.ROLE_LIST_BOX,
-                  pyatspi.ROLE_MENU_ITEM,
-                  pyatspi.ROLE_RADIO_MENU_ITEM,
-                  pyatspi.ROLE_RADIO_BUTTON,
-                  pyatspi.ROLE_PUSH_BUTTON,
-                  pyatspi.ROLE_TOGGLE_BUTTON]
+        always = [Atspi.Role.CHECK_BOX,
+                  Atspi.Role.CHECK_MENU_ITEM,
+                  Atspi.Role.LIST_BOX,
+                  Atspi.Role.MENU_ITEM,
+                  Atspi.Role.PAGE_TAB,
+                  Atspi.Role.RADIO_MENU_ITEM,
+                  Atspi.Role.RADIO_BUTTON,
+                  Atspi.Role.PUSH_BUTTON,
+                  Atspi.Role.TOGGLE_BUTTON]
 
-        descendable = [pyatspi.ROLE_MENU,
-                       pyatspi.ROLE_MENU_BAR,
-                       pyatspi.ROLE_TOOL_BAR,
-                       pyatspi.ROLE_TREE_ITEM]
+        descendable = [Atspi.Role.MENU,
+                       Atspi.Role.MENU_BAR,
+                       Atspi.Role.TOOL_BAR,
+                       Atspi.Role.TREE_ITEM]
 
-        role = obj.getRole()
+        role = AXObject.get_role(obj)
         if role in always:
             return True
 
@@ -1153,33 +710,33 @@ class Utilities(script_utilities.Utilities):
             # allowing the user to drill down into them in browse mode.
             return offset == -1
 
-        if role == pyatspi.ROLE_ENTRY:
-            if obj.childCount == 1 and self.isFakePlaceholderForEntry(obj[0]):
+        if role == Atspi.Role.ENTRY:
+            if AXObject.get_child_count(obj) == 1 \
+              and self.isFakePlaceholderForEntry(AXObject.get_child(obj, 0)):
                 return True
             return False
 
-        state = obj.getState()
-        if state.contains(pyatspi.STATE_EDITABLE):
+        if AXUtilities.is_editable(obj):
             return False
 
-        if role == pyatspi.ROLE_TABLE_CELL:
+        if role == Atspi.Role.TABLE_CELL:
             if self.isFocusModeWidget(obj):
                 return not self._script.browseModeIsSticky()
             if self.hasNameAndActionAndNoUsefulChildren(obj):
                 return True
 
-        if role in [pyatspi.ROLE_COLUMN_HEADER, pyatspi.ROLE_ROW_HEADER] \
-           and self.hasExplicitName(obj):
+        if role in [Atspi.Role.COLUMN_HEADER, Atspi.Role.ROW_HEADER] \
+           and AXUtilities.has_explicit_name(obj):
             return True
 
-        if role == pyatspi.ROLE_COMBO_BOX:
+        if role == Atspi.Role.COMBO_BOX:
             return True
 
-        if role in [pyatspi.ROLE_EMBEDDED, pyatspi.ROLE_TREE, pyatspi.ROLE_TREE_TABLE]:
+        if role in [Atspi.Role.EMBEDDED, Atspi.Role.TREE, Atspi.Role.TREE_TABLE]:
             return not self._script.browseModeIsSticky()
 
-        if role == pyatspi.ROLE_LINK:
-            return self.hasExplicitName(obj) or self.hasUselessCanvasDescendant(obj)
+        if role == Atspi.Role.LINK:
+            return AXUtilities.has_explicit_name(obj) or self.hasUselessCanvasDescendant(obj)
 
         if self.isNonNavigableEmbeddedDocument(obj):
             return True
@@ -1187,245 +744,161 @@ class Utilities(script_utilities.Utilities):
         if self.isFakePlaceholderForEntry(obj):
             return True
 
+        if self.isCustomImage(obj):
+            return True
+
+        # Example: Some StackExchange instances have a focusable "note"/comment role
+        # with a name (e.g. "Accepted"), and a single child div which is empty.
+        if role in self._textBlockElementRoles() and AXUtilities.is_focusable(obj) \
+           and AXUtilities.has_explicit_name(obj):
+            for child in AXObject.iter_children(obj):
+                if not self.isUselessEmptyElement(child):
+                    return False
+            return True
+
         return False
 
-    def __findRange(self, text, offset, start, end, boundary):
-        # We should not have to do any of this. Seriously. This is why
-        # We can't have nice things.
-
-        allText = text.getText(0, -1)
-        if boundary == pyatspi.TEXT_BOUNDARY_CHAR:
-            try:
-                string = allText[offset]
-            except IndexError:
-                string = ""
-
-            return string, offset, offset + 1
-
-        extents = list(text.getRangeExtents(offset, offset + 1, 0))
-
-        def _inThisSpan(span):
-            return span[0] <= offset <= span[1]
-
-        def _onThisLine(span):
-            start, end = span
-            startExtents = list(text.getRangeExtents(start, start + 1, 0))
-            endExtents = list(text.getRangeExtents(end - 1, end, 0))
-            delta = max(startExtents[3], endExtents[3])
-            if not self.extentsAreOnSameLine(startExtents, endExtents, delta):
-                msg = "FAIL: Start %s and end %s of '%s' not on same line" \
-                      % (startExtents, endExtents, allText[start:end])
-                debug.println(debug.LEVEL_INFO, msg, True)
-                startExtents = endExtents
-
-            return self.extentsAreOnSameLine(extents, startExtents)
-
-        spans = []
-        charCount = text.characterCount
-        if boundary == pyatspi.TEXT_BOUNDARY_SENTENCE_START:
-            spans = [m.span() for m in re.finditer(r"\S*[^\.\?\!]+((?<!\w)[\.\?\!]+(?!\w)|\S*)", allText)]
-        elif boundary is not None:
-            spans = [m.span() for m in re.finditer("[^\n\r]+", allText)]
-        if not spans:
-            spans = [(0, charCount)]
-
-        rangeStart, rangeEnd = 0, charCount
+    def __findSentence(self, obj, offset):
+        # TODO - JD: Move this sad hack to AXText.
+        text = AXText.get_all_text(obj)
+        spans = [m.span() for m in re.finditer(r"\S*[^\.\?\!]+((?<!\w)[\.\?\!]+(?!\w)|\S*)", text)]
+        rangeStart, rangeEnd = 0, len(text)
         for span in spans:
-            if _inThisSpan(span):
+            if span[0] <= offset <= span[1]:
                 rangeStart, rangeEnd = span[0], span[1] + 1
                 break
+        return text[rangeStart:rangeEnd], rangeStart, rangeEnd
 
-        string = allText[rangeStart:rangeEnd]
-        if string and boundary in [pyatspi.TEXT_BOUNDARY_SENTENCE_START, None]:
-            return string, rangeStart, rangeEnd
+    def _getTextAtOffset(self, obj, offset, granularity):
+        def stringForDebug(x):
+            return x.replace(self.EMBEDDED_OBJECT_CHARACTER, "[OBJ]").replace("\n", "\\n")
 
-        words = [m.span() for m in re.finditer("[^\\s\ufffc]+", string)]
-        words = list(map(lambda x: (x[0] + rangeStart, x[1] + rangeStart), words))
-        if boundary == pyatspi.TEXT_BOUNDARY_WORD_START:
-            spans = list(filter(_inThisSpan, words))
-        if boundary == pyatspi.TEXT_BOUNDARY_LINE_START:
-            spans = list(filter(_onThisLine, words))
-        if spans:
-            rangeStart, rangeEnd = spans[0][0], spans[-1][1] + 1
-            string = allText[rangeStart:rangeEnd]
-
-        if not (rangeStart <= offset <= rangeEnd):
-            return allText[start:end], start, end
-
-        return string, rangeStart, rangeEnd
-
-    def _attemptBrokenTextRecovery(self, obj, **args):
-        return False
-
-    def _getTextAtOffset(self, obj, offset, boundary):
         if not obj:
-            msg = "WEB: Results for text at offset %i for %s using %s:\n" \
-                  "     String: '', Start: 0, End: 0. (obj is None)" % (offset, obj, boundary)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB:", granularity, f"at offset {offset} for", obj, ":",
+                      "'', Start: 0, End: 0. (obj is None)"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return '', 0, 0
 
-        text = self.queryNonEmptyText(obj)
-        if not text:
-            msg = "WEB: Results for text at offset %i for %s using %s:\n" \
-                  "     String: '', Start: 0, End: 1. (queryNonEmptyText() returned None)" \
-                  % (offset, obj, boundary)
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if not self.treatAsTextObject(obj):
+            tokens = ["WEB:", granularity, f"at offset {offset} for", obj, ":",
+                      "'', Start: 0, End: 1. (treatAsTextObject() returned False)"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return '', 0, 1
 
-        if boundary is None:
-            string, start, end = text.getText(0, -1), 0, text.characterCount
-            s = string.replace(self.EMBEDDED_OBJECT_CHARACTER, "[OBJ]").replace("\n", "\\n")
-            msg = "WEB: Results for text at offset %i for %s using %s:\n" \
-                  "     String: '%s', Start: %i, End: %i." % (offset, obj, boundary, s, start, end)
-            debug.println(debug.LEVEL_INFO, msg, True)
+        allText = AXText.get_all_text(obj)
+        if granularity is None:
+            string, start, end = allText, 0, len(allText)
+            s = stringForDebug(string)
+            tokens = ["WEB:", granularity, f"at offset {offset} for", obj, ":",
+                      f"'{s}', Start: {start}, End: {end}."]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return string, start, end
 
-        if boundary == pyatspi.TEXT_BOUNDARY_SENTENCE_START \
-            and not obj.getState().contains(pyatspi.STATE_EDITABLE):
-            allText = text.getText(0, -1)
-            if obj.getRole() in [pyatspi.ROLE_LIST_ITEM, pyatspi.ROLE_HEADING] \
+        if granularity == Atspi.TextGranularity.SENTENCE and not AXUtilities.is_editable(obj):
+            if AXObject.get_role(obj) in [Atspi.Role.LIST_ITEM, Atspi.Role.HEADING] \
                or not (re.search(r"\w", allText) and self.isTextBlockElement(obj)):
-                string, start, end = allText, 0, text.characterCount
-                s = string.replace(self.EMBEDDED_OBJECT_CHARACTER, "[OBJ]").replace("\n", "\\n")
-                msg = "WEB: Results for text at offset %i for %s using %s:\n" \
-                      "     String: '%s', Start: %i, End: %i." % (offset, obj, boundary, s, start, end)
-                debug.println(debug.LEVEL_INFO, msg, True)
+                string, start, end = allText, 0, len(allText)
+                s = stringForDebug(string)
+                tokens = ["WEB:", granularity, f"at offset {offset} for", obj, ":",
+                          f"'{s}', Start: {start}, End: {end}."]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 return string, start, end
 
-        if boundary == pyatspi.TEXT_BOUNDARY_LINE_START and self.treatAsEndOfLine(obj, offset):
+        if granularity == Atspi.TextGranularity.LINE and self.treatAsEndOfLine(obj, offset):
             offset -= 1
-            msg = "WEB: Line sought for %s at end of text. Adjusting offset to %i." % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: Line sought for", obj, "at end of text. Adjusting offset to",
+                      offset, "."]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
         offset = max(0, offset)
-        string, start, end = text.getTextAtOffset(offset, boundary)
+        if granularity == Atspi.TextGranularity.LINE:
+            string, start, end = AXText.get_line_at_offset(obj, offset)
+        elif granularity == Atspi.TextGranularity.SENTENCE:
+            string, start, end = AXText.get_sentence_at_offset(obj, offset)
+        elif granularity == Atspi.TextGranularity.WORD:
+            string, start, end = AXText.get_word_at_offset(obj, offset)
+        elif granularity == Atspi.TextGranularity.CHAR:
+            string, start, end = AXText.get_character_at_offset(obj, offset)
+        else:
+            string, start, end = AXText.get_line_at_offset(obj, offset)
 
-        # The above should be all that we need to do, but....
-        if not self._attemptBrokenTextRecovery(obj, boundary=boundary):
-            s = string.replace(self.EMBEDDED_OBJECT_CHARACTER, "[OBJ]").replace("\n", "\\n")
-            msg = "WEB: Results for text at offset %i for %s using %s:\n" \
-                  "     String: '%s', Start: %i, End: %i.\n" \
-                  "     Not checking for broken text." % (offset, obj, boundary, s, start, end)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return string, start, end
+        s = stringForDebug(string)
+        tokens = ["WEB:", granularity, f"at offset {offset} for", obj, ":",
+                  f"'{s}', Start: {start}, End: {end}."]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
-        needSadHack = False
-        testString, testStart, testEnd = text.getTextAtOffset(start, boundary)
-        if (string, start, end) != (testString, testStart, testEnd):
-            s1 = string.replace(self.EMBEDDED_OBJECT_CHARACTER, "[OBJ]").replace("\n", "\\n")
-            s2 = testString.replace(self.EMBEDDED_OBJECT_CHARACTER, "[OBJ]").replace("\n", "\\n")
-            msg = "FAIL: Bad results for text at offset for %s using %s.\n" \
-                  "      For offset %i - String: '%s', Start: %i, End: %i.\n" \
-                  "      For offset %i - String: '%s', Start: %i, End: %i.\n" \
-                  "      The bug is the above results should be the same.\n" \
-                  "      This very likely needs to be fixed by the toolkit." \
-                  % (obj, boundary, offset, s1, start, end, start, s2, testStart, testEnd)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            needSadHack = True
-        elif not string and 0 <= offset < text.characterCount:
-            s1 = string.replace(self.EMBEDDED_OBJECT_CHARACTER, "[OBJ]").replace("\n", "\\n")
-            s2 = text.getText(0, -1).replace(self.EMBEDDED_OBJECT_CHARACTER, "[OBJ]").replace("\n", "\\n")
-            msg = "FAIL: Bad results for text at offset %i for %s using %s:\n" \
-                  "      String: '%s', Start: %i, End: %i.\n" \
-                  "      The bug is no text reported for a valid offset.\n" \
-                  "      Character count: %i, Full text: '%s'.\n" \
-                  "      This very likely needs to be fixed by the toolkit." \
-                  % (offset, obj, boundary, s1, start, end, text.characterCount, s2)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            needSadHack = True
-        elif not (start <= offset < end) and not (self.isPlainText() or self.elementIsPreformattedText(obj)):
-            s1 = string.replace(self.EMBEDDED_OBJECT_CHARACTER, "[OBJ]").replace("\n", "\\n")
-            msg = "FAIL: Bad results for text at offset %i for %s using %s:\n" \
-                  "      String: '%s', Start: %i, End: %i.\n" \
-                  "      The bug is the range returned is outside of the offset.\n" \
-                  "      This very likely needs to be fixed by the toolkit." \
-                  % (offset, obj, boundary, s1, start, end)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            needSadHack = True
-        elif len(string) < end - start:
-            s1 = string.replace(self.EMBEDDED_OBJECT_CHARACTER, "[OBJ]").replace("\n", "\\n")
-            msg = "FAIL: Bad results for text at offset %i for %s using %s:\n" \
-                  "      String: '%s', Start: %i, End: %i.\n" \
-                  "      The bug is that the length of string is less than the text range.\n" \
-                  "      This very likely needs to be fixed by the toolkit." \
-                  % (offset, obj, boundary, s1, start, end)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            needSadHack = True
-        elif boundary == pyatspi.TEXT_BOUNDARY_CHAR and string == "\ufffd":
-            msg = "FAIL: Bad results for text at offset %i for %s using %s:\n" \
-                  "      String: '%s', Start: %i, End: %i.\n" \
-                  "      The bug is that we didn't seem to get a valid character.\n" \
-                  "      This very likely needs to be fixed by the toolkit." \
-                  % (offset, obj, boundary, string, start, end)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            needSadHack = True
+        # https://bugzilla.mozilla.org/show_bug.cgi?id=1141181
+        needSadHack = granularity == Atspi.TextGranularity.SENTENCE and allText \
+           and (string, start, end) == ("", 0, 0)
 
         if needSadHack:
-            sadString, sadStart, sadEnd = self.__findRange(text, offset, start, end, boundary)
-            s = sadString.replace(self.EMBEDDED_OBJECT_CHARACTER, "[OBJ]").replace("\n", "\\n")
-            msg = "HACK: Attempting to recover from above failure.\n" \
-                  "      String: '%s', Start: %i, End: %i." % (s, sadStart, sadEnd)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            sadString, sadStart, sadEnd = self.__findSentence(obj, offset)
+            s = stringForDebug(sadString)
+            tokens = ["HACK: Attempting to recover from above failure. Result:",
+                      f"'{s}', Start: {sadStart}, End: {sadEnd}."]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return sadString, sadStart, sadEnd
 
-        s = string.replace(self.EMBEDDED_OBJECT_CHARACTER, "[OBJ]").replace("\n", "\\n")
-        msg = "WEB: Results for text at offset %i for %s using %s:\n" \
-              "     String: '%s', Start: %i, End: %i." % (offset, obj, boundary, s, start, end)
-        debug.println(debug.LEVEL_INFO, msg, True)
         return string, start, end
 
-    def _getContentsForObj(self, obj, offset, boundary):
+    def _getContentsForObj(self, obj, offset, granularity):
+        tokens = ["WEB: Attempting to get contents for", obj, granularity]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
         if not obj:
             return []
 
-        if boundary == pyatspi.TEXT_BOUNDARY_LINE_START:
-            if self.isMath(obj):
-                if self.isMathTopLevel(obj):
+        if granularity == Atspi.TextGranularity.SENTENCE and AXUtilities.is_time(obj):
+            string = AXText.get_all_text(obj)
+            if string:
+                return [[obj, 0, len(string), string]]
+
+        if granularity == Atspi.TextGranularity.LINE:
+            if AXUtilities.is_math_related(obj):
+                if AXUtilities.is_math(obj):
                     math = obj
                 else:
                     math = self.getMathAncestor(obj)
                 return [[math, 0, 1, '']]
 
-            text = self.queryNonEmptyText(obj)
-
+            treatAsText = self.treatAsTextObject(obj)
             if self.elementLinesAreSingleChars(obj):
-                if obj.name and text:
-                    msg = "WEB: Returning name as contents for %s (single-char lines)" % obj
-                    debug.println(debug.LEVEL_INFO, msg, True)
-                    return [[obj, 0, text.characterCount, obj.name]]
+                if AXObject.get_name(obj) and treatAsText:
+                    tokens = ["WEB: Returning name as contents for", obj, "(single-char lines)"]
+                    debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+                    return [[obj, 0, AXText.get_character_count(obj), AXObject.get_name(obj)]]
 
-                msg = "WEB: Returning all text as contents for %s (single-char lines)" % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
-                boundary = None
+                tokens = ["WEB: Returning all text as contents for", obj, "(single-char lines)"]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+                granularity = None
 
             if self.elementLinesAreSingleWords(obj):
-                if obj.name and text:
-                    msg = "WEB: Returning name as contents for %s (single-word lines)" % obj
-                    debug.println(debug.LEVEL_INFO, msg, True)
-                    return [[obj, 0, text.characterCount, obj.name]]
+                if AXObject.get_name(obj) and treatAsText:
+                    tokens = ["WEB: Returning name as contents for", obj, "(single-word lines)"]
+                    debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+                    return [[obj, 0, AXText.get_character_count(obj), AXObject.get_name(obj)]]
 
-                msg = "WEB: Returning all text as contents for %s (single-word lines)" % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
-                boundary = None
+                tokens = ["WEB: Returning all text as contents for", obj, "(single-word lines)"]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+                granularity = None
 
-        role = obj.getRole()
-        if role == pyatspi.ROLE_INTERNAL_FRAME and obj.childCount == 1:
-            return self._getContentsForObj(obj[0], 0, boundary)
+        if AXUtilities.is_internal_frame(obj) and AXObject.get_child_count(obj) == 1:
+            return self._getContentsForObj(AXObject.get_child(obj, 0), 0, granularity)
 
-        string, start, end = self._getTextAtOffset(obj, offset, boundary)
+        string, start, end = self._getTextAtOffset(obj, offset, granularity)
         if not string:
             return [[obj, start, end, string]]
 
         stringOffset = offset - start
         try:
             char = string[stringOffset]
-        except:
-            pass
+        except Exception as error:
+            msg = f"WEB: Could not get char {stringOffset} for '{string}': {error}"
+            debug.print_message(debug.LEVEL_INFO, msg, True)
         else:
             if char == self.EMBEDDED_OBJECT_CHARACTER:
-                child = self.getChildAtOffset(obj, offset)
+                child = AXHypertext.get_child_at_offset(obj, offset)
                 if child:
-                    return self._getContentsForObj(child, 0, boundary)
+                    return self._getContentsForObj(child, 0, granularity)
 
         ranges = [m.span() for m in re.finditer("[^\ufffc]+", string)]
         strings = list(filter(lambda x: x[0] <= stringOffset <= x[1], ranges))
@@ -1435,32 +908,42 @@ class Utilities(script_utilities.Utilities):
             string = string[rangeStart:rangeEnd]
             end = start + len(string)
 
-        return [[obj, start, end, string]]
+        if granularity in [Atspi.TextGranularity.WORD, Atspi.TextGranularity.CHAR]:
+            return [[obj, start, end, string]]
+
+        return self.adjustContentsForLanguage([[obj, start, end, string]])
 
     def getSentenceContentsAtOffset(self, obj, offset, useCache=True):
+        self._canHaveCaretContextDecision = {}
+        rv = self._getSentenceContentsAtOffset(obj, offset, useCache)
+        self._canHaveCaretContextDecision = {}
+        return rv
+
+    def _getSentenceContentsAtOffset(self, obj, offset, useCache=True):
         if not obj:
             return []
 
         offset = max(0, offset)
 
         if useCache:
-            if self.findObjectInContents(obj, offset, self._currentSentenceContents, usingCache=True) != -1:
+            if self.findObjectInContents(
+                    obj, offset, self._currentSentenceContents, usingCache=True) != -1:
                 return self._currentSentenceContents
 
-        boundary = pyatspi.TEXT_BOUNDARY_SENTENCE_START
-        objects = self._getContentsForObj(obj, offset, boundary)
-        state = obj.getState()
-        if state.contains(pyatspi.STATE_EDITABLE) \
-           and state.contains(pyatspi.STATE_FOCUSED):
-            return objects
+        granularity = Atspi.TextGranularity.SENTENCE
+        objects = self._getContentsForObj(obj, offset, granularity)
+        if AXUtilities.is_editable(obj):
+            if AXUtilities.is_focused(obj):
+                return objects
+            if self.isContentEditableWithEmbeddedObjects(obj):
+                return objects
 
         def _treatAsSentenceEnd(x):
             xObj, xStart, xEnd, xString = x
             if not self.isTextBlockElement(xObj):
                 return False
 
-            text = self.queryNonEmptyText(xObj)
-            if text and 0 < text.characterCount <= xEnd:
+            if self.treatAsTextObject(xObj) and 0 < AXText.get_character_count(xObj) <= xEnd:
                 return True
 
             if 0 <= xStart <= 5:
@@ -1475,12 +958,12 @@ class Utilities(script_utilities.Utilities):
             if self.isTextBlockElement(firstObj):
                 if firstStart == 0:
                     break
-            elif self.isTextBlockElement(firstObj.parent):
-                if self.characterOffsetInParent(firstObj) == 0:
+            elif self.isTextBlockElement(AXObject.get_parent(firstObj)):
+                if AXHypertext.get_character_offset_in_parent(firstObj) == 0:
                     break
 
             prevObj, pOffset = self.findPreviousCaretInOrder(firstObj, firstStart)
-            onLeft = self._getContentsForObj(prevObj, pOffset, boundary)
+            onLeft = self._getContentsForObj(prevObj, pOffset, granularity)
             onLeft = list(filter(lambda x: x not in objects, onLeft))
             endsOnLeft = list(filter(_treatAsSentenceEnd, onLeft))
             if endsOnLeft:
@@ -1497,7 +980,7 @@ class Utilities(script_utilities.Utilities):
         while not _treatAsSentenceEnd(objects[-1]):
             lastObj, lastStart, lastEnd, lastString = objects[-1]
             nextObj, nOffset = self.findNextCaretInOrder(lastObj, lastEnd - 1)
-            onRight = self._getContentsForObj(nextObj, nOffset, boundary)
+            onRight = self._getContentsForObj(nextObj, nOffset, granularity)
             onRight = list(filter(lambda x: x not in objects, onRight))
             if not onRight:
                 break
@@ -1510,43 +993,64 @@ class Utilities(script_utilities.Utilities):
         return objects
 
     def getCharacterContentsAtOffset(self, obj, offset, useCache=True):
+        self._canHaveCaretContextDecision = {}
+        rv = self._getCharacterContentsAtOffset(obj, offset, useCache)
+        self._canHaveCaretContextDecision = {}
+        return rv
+
+    def _getCharacterContentsAtOffset(self, obj, offset, useCache=True):
         if not obj:
             return []
 
         offset = max(0, offset)
 
         if useCache:
-            if self.findObjectInContents(obj, offset, self._currentCharacterContents, usingCache=True) != -1:
+            if self.findObjectInContents(
+                    obj, offset, self._currentCharacterContents, usingCache=True) != -1:
                 return self._currentCharacterContents
 
-        boundary = pyatspi.TEXT_BOUNDARY_CHAR
-        objects = self._getContentsForObj(obj, offset, boundary)
+        granularity = Atspi.TextGranularity.CHAR
+        objects = self._getContentsForObj(obj, offset, granularity)
         if useCache:
             self._currentCharacterContents = objects
 
         return objects
 
     def getWordContentsAtOffset(self, obj, offset, useCache=True):
+        self._canHaveCaretContextDecision = {}
+        rv = self._getWordContentsAtOffset(obj, offset, useCache)
+        self._canHaveCaretContextDecision = {}
+        return rv
+
+    def _getWordContentsAtOffset(self, obj, offset, useCache=True):
         if not obj:
             return []
 
         offset = max(0, offset)
 
         if useCache:
-            if self.findObjectInContents(obj, offset, self._currentWordContents, usingCache=True) != -1:
+            if self.findObjectInContents(
+                    obj, offset, self._currentWordContents, usingCache=True) != -1:
                 self._debugContentsInfo(obj, offset, self._currentWordContents, "Word (cached)")
                 return self._currentWordContents
 
-        boundary = pyatspi.TEXT_BOUNDARY_WORD_START
-        objects = self._getContentsForObj(obj, offset, boundary)
+        granularity = Atspi.TextGranularity.WORD
+        objects = self._getContentsForObj(obj, offset, granularity)
         extents = self.getExtents(obj, offset, offset + 1)
 
         def _include(x):
             if x in objects:
                 return False
 
+            if AXUtilities.is_text_input(obj):
+                return False
+
             xObj, xStart, xEnd, xString = x
             if xStart == xEnd or not xString:
+                return False
+
+            if AXUtilities.is_table_cell_or_header(obj) \
+               and AXUtilities.is_table_cell_or_header(xObj) and obj != xObj:
                 return False
 
             xExtents = self.getExtents(xObj, xStart, xStart + 1)
@@ -1556,11 +1060,11 @@ class Utilities(script_utilities.Utilities):
         firstObj, firstStart, firstEnd, firstString = objects[0]
         prevObj, pOffset = self.findPreviousCaretInOrder(firstObj, firstStart)
         while prevObj and firstString and prevObj != firstObj:
-            text = self.queryNonEmptyText(prevObj)
-            if not text or text.getText(pOffset, pOffset + 1).isspace():
+            char = AXText.get_character_at_offset(prevObj, pOffset)[0]
+            if not char or char.isspace():
                 break
 
-            onLeft = self._getContentsForObj(prevObj, pOffset, boundary)
+            onLeft = self._getContentsForObj(prevObj, pOffset, granularity)
             onLeft = list(filter(_include, onLeft))
             if not onLeft:
                 break
@@ -1579,7 +1083,7 @@ class Utilities(script_utilities.Utilities):
             if nextObj == lastObj:
                 break
 
-            onRight = self._getContentsForObj(nextObj, nOffset, boundary)
+            onRight = self._getContentsForObj(nextObj, nOffset, granularity)
             if onRight and self._contentIsSubsetOf(objects[0], onRight[-1]):
                 onRight = onRight[0:-1]
 
@@ -1592,7 +1096,7 @@ class Utilities(script_utilities.Utilities):
 
         # We want to treat the list item marker as its own word.
         firstObj, firstStart, firstEnd, firstString = objects[0]
-        if firstStart == 0 and firstObj.getRole() == pyatspi.ROLE_LIST_ITEM:
+        if firstStart == 0 and AXUtilities.is_list_item(firstObj):
             objects = [objects[0]]
 
         if useCache:
@@ -1602,29 +1106,37 @@ class Utilities(script_utilities.Utilities):
         return objects
 
     def getObjectContentsAtOffset(self, obj, offset=0, useCache=True):
+        self._canHaveCaretContextDecision = {}
+        rv = self._getObjectContentsAtOffset(obj, offset, useCache)
+        self._canHaveCaretContextDecision = {}
+        return rv
+
+    def _getObjectContentsAtOffset(self, obj, offset=0, useCache=True):
         if not obj:
             return []
 
-        if self.isDead(obj):
+        if AXObject.is_dead(obj):
             msg = "ERROR: Cannot get object contents at offset for dead object."
-            debug.println(debug.LEVEL_INFO, msg, True)
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return []
 
         offset = max(0, offset)
 
         if useCache:
-            if self.findObjectInContents(obj, offset, self._currentObjectContents, usingCache=True) != -1:
-                self._debugContentsInfo(obj, offset, self._currentObjectContents, "Object (cached)")
+            if self.findObjectInContents(
+                    obj, offset, self._currentObjectContents, usingCache=True) != -1:
+                self._debugContentsInfo(
+                    obj, offset, self._currentObjectContents, "Object (cached)")
                 return self._currentObjectContents
 
-        objIsLandmark = self.isLandmark(obj)
+        objIsLandmark = AXUtilities.is_landmark(obj)
 
         def _isInObject(x):
             if not x:
                 return False
             if x == obj:
                 return True
-            return _isInObject(x.parent)
+            return _isInObject(AXObject.get_parent(x))
 
         def _include(x):
             if x in objects:
@@ -1634,12 +1146,17 @@ class Utilities(script_utilities.Utilities):
             if xStart == xEnd:
                 return False
 
-            if objIsLandmark and self.isLandmark(xObj) and obj != xObj:
+            if objIsLandmark and AXUtilities.is_landmark(xObj) and obj != xObj:
                 return False
 
             return _isInObject(xObj)
 
         objects = self._getContentsForObj(obj, offset, None)
+        if not objects:
+            tokens = ["ERROR: Cannot get object contents for", obj, f"at offset {offset}"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return []
+
         lastObj, lastStart, lastEnd, lastString = objects[-1]
         nextObj, nOffset = self.findNextCaretInOrder(lastObj, lastEnd - 1)
         while nextObj:
@@ -1672,33 +1189,32 @@ class Utilities(script_utilities.Utilities):
         if debug.LEVEL_INFO < debug.debugLevel:
             return
 
-        msg = "WEB: %s for %s at offset %i:" % (contentsMsg, obj, offset)
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: ", contentsMsg, "for", obj, "at offset", offset, ":"]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
         indent = " " * 8
         for i, (acc, start, end, string) in enumerate(contents):
             try:
                 extents = self.getExtents(acc, start, end)
-            except:
-                extents = "(exception)"
-            msg = "     %i. chars: %i-%i: '%s' extents=%s\n" % (i, start, end, string, extents)
-            msg += debug.getAccessibleDetails(debug.LEVEL_INFO, acc, indent)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            except Exception as error:
+                extents = f"(exception: {error})"
+            msg = f"     {i}. chars: {start}-{end}: '{string}' extents={extents}\n"
+            msg += AXUtilitiesDebugging.object_details_as_string(acc, indent, False)
+            debug.print_message(debug.LEVEL_INFO, msg, True)
 
     def treatAsEndOfLine(self, obj, offset):
         if not self.isContentEditableWithEmbeddedObjects(obj):
             return False
 
-        if "Text" not in pyatspi.listInterfaces(obj):
+        if not AXObject.supports_text(obj):
             return False
 
         if self.isDocument(obj):
             return False
 
-        text = obj.queryText()
-        if offset == text.characterCount:
-            msg = "WEB: %s offset %i is end of line: offset is characterCount" % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if offset == AXText.get_character_count(obj):
+            tokens = ["WEB: ", obj, "offset", offset, "is end of line: offset is characterCount"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return True
 
         # Do not treat a literal newline char as the end of line. When there is an
@@ -1706,42 +1222,52 @@ class Utilities(script_utilities.Utilities):
         # for the line at that offset. Here we are trying to figure out where asking
         # for the line at offset will give us the next line rather than the line where
         # the cursor is physically blinking.
-
-        char = text.getText(offset, offset + 1)
+        char = AXText.get_character_at_offset(obj, offset)[0]
         if char == self.EMBEDDED_OBJECT_CHARACTER:
             prevExtents = self.getExtents(obj, offset - 1, offset)
             thisExtents = self.getExtents(obj, offset, offset + 1)
             sameLine = self.extentsAreOnSameLine(prevExtents, thisExtents)
-            msg = "WEB: %s offset %i is [obj]. Same line: %s Is end of line: %s" % \
-                (obj, offset, sameLine, not sameLine)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: ", obj, "offset", offset, "is [obj]. Same line: ",
+                      sameLine, "Is end of line: ", not sameLine]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return not sameLine
 
         return False
 
     def getLineContentsAtOffset(self, obj, offset, layoutMode=None, useCache=True):
+        self._canHaveCaretContextDecision = {}
+        rv = self._getLineContentsAtOffset(obj, offset, layoutMode, useCache)
+        self._canHaveCaretContextDecision = {}
+        return rv
+
+    def _getLineContentsAtOffset(self, obj, offset, layoutMode=None, useCache=True):
+        start_time = time.time()
         if not obj:
             return []
 
-        if self.isDead(obj):
+        if AXObject.is_dead(obj):
             msg = "ERROR: Cannot get line contents at offset for dead object."
-            debug.println(debug.LEVEL_INFO, msg, True)
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return []
 
         offset = max(0, offset)
-        if obj.getRole() == pyatspi.ROLE_TOOL_BAR and not self._treatObjectAsWhole(obj):
-            child = self.getChildAtOffset(obj, offset)
+        if (AXUtilities.is_tool_bar(obj) or AXUtilities.is_menu_bar(obj)) \
+                and not self._treatObjectAsWhole(obj):
+            child = AXHypertext.get_child_at_offset(obj, offset)
             if child:
                 obj = child
                 offset = 0
 
         if useCache:
-            if self.findObjectInContents(obj, offset, self._currentLineContents, usingCache=True) != -1:
-                self._debugContentsInfo(obj, offset, self._currentLineContents, "Line (cached)")
+            if self.findObjectInContents(
+                    obj, offset, self._currentLineContents, usingCache=True) != -1:
+                self._debugContentsInfo(
+                    obj, offset, self._currentLineContents, "Line (cached)")
                 return self._currentLineContents
 
         if layoutMode is None:
-            layoutMode = _settingsManager.getSetting('layoutMode') or self._script.inFocusMode()
+            layoutMode = settings_manager.get_manager().get_setting('layoutMode') \
+                or self._script.inFocusMode()
 
         objects = []
         if offset > 0 and self.treatAsEndOfLine(obj, offset):
@@ -1754,7 +1280,7 @@ class Utilities(script_utilities.Utilities):
             if container:
                 extents = self.getExtents(container, 0, 1)
 
-        objBanner = pyatspi.findAncestor(obj, self.isLandmarkBanner)
+        objBanner = AXObject.find_ancestor(obj, AXUtilities.is_landmark_banner)
 
         def _include(x):
             if x in objects:
@@ -1767,10 +1293,10 @@ class Utilities(script_utilities.Utilities):
             xExtents = self.getExtents(xObj, xStart, xStart + 1)
 
             if obj != xObj:
-                if self.isLandmark(obj) and self.isLandmark(xObj):
+                if AXUtilities.is_landmark(obj) and AXUtilities.is_landmark(xObj):
                     return False
                 if self.isLink(obj) and self.isLink(xObj):
-                    xObjBanner =  pyatspi.findAncestor(xObj, self.isLandmarkBanner)
+                    xObjBanner = AXObject.find_ancestor(xObj, AXUtilities.is_landmark_banner)
                     if (objBanner or xObjBanner) and objBanner != xObjBanner:
                         return False
                     if abs(extents[0] - xExtents[0]) <= 1 and abs(extents[1] - xExtents[1]) <= 1:
@@ -1778,18 +1304,23 @@ class Utilities(script_utilities.Utilities):
                         return False
                 elif self.isBlockListDescendant(obj) != self.isBlockListDescendant(xObj):
                     return False
-                elif obj.getRole() in [pyatspi.ROLE_TREE, pyatspi.ROLE_TREE_ITEM] \
-                     and xObj.getRole() in [pyatspi.ROLE_TREE, pyatspi.ROLE_TREE_ITEM]:
+                elif AXUtilities.is_tree_related(obj) and AXUtilities.is_tree_related(xObj):
+                    return False
+                elif AXUtilities.is_heading(obj) and AXComponent.has_no_size(obj):
+                    return False
+                elif AXUtilities.is_heading(xObj) and AXComponent.has_no_size(xObj):
                     return False
 
-            if self.isMathTopLevel(xObj) or self.isMath(obj):
+            if AXUtilities.is_math(xObj) or AXUtilities.is_math_related(obj):
                 onSameLine = self.extentsAreOnSameLine(extents, xExtents, extents[3])
+            elif self.isTextSubscriptOrSuperscript(xObj):
+                onSameLine = self.extentsAreOnSameLine(extents, xExtents, xExtents[3])
             else:
                 onSameLine = self.extentsAreOnSameLine(extents, xExtents)
             return onSameLine
 
-        boundary = pyatspi.TEXT_BOUNDARY_LINE_START
-        objects = self._getContentsForObj(obj, offset, boundary)
+        granularity = Atspi.TextGranularity.LINE
+        objects = self._getContentsForObj(obj, offset, granularity)
         if not layoutMode:
             if useCache:
                 self._currentLineContents = objects
@@ -1797,12 +1328,17 @@ class Utilities(script_utilities.Utilities):
             self._debugContentsInfo(obj, offset, objects, "Line (not layout mode)")
             return objects
 
+        if not (objects and objects[0]):
+            tokens = ["WEB: Error. No objects found for", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return []
+
         firstObj, firstStart, firstEnd, firstString = objects[0]
-        if (extents[2] == 0 and extents[3] == 0) or self.isMath(firstObj):
+        if (extents[2] == 0 and extents[3] == 0) or AXUtilities.is_math_related(firstObj):
             extents = self.getExtents(firstObj, firstStart, firstEnd)
 
         lastObj, lastStart, lastEnd, lastString = objects[-1]
-        if self.isMathTopLevel(lastObj):
+        if AXUtilities.is_math(lastObj):
             lastObj, lastEnd = self.lastContext(lastObj)
             lastEnd += 1
 
@@ -1811,15 +1347,17 @@ class Utilities(script_utilities.Utilities):
         nextObj, nOffset = self.findNextCaretInOrder(lastObj, lastEnd - 1)
 
         # Check for things on the same line to the left of this object.
+        prevStartTime = time.time()
         while prevObj and self.getDocumentForObject(prevObj) == document:
-            text = self.queryNonEmptyText(prevObj)
-            if text and text.getText(pOffset, pOffset + 1) in [" ", "\xa0"]:
+            char = AXText.get_character_at_offset(prevObj, pOffset)[0]
+            if char.isspace():
                 prevObj, pOffset = self.findPreviousCaretInOrder(prevObj, pOffset)
 
-            if text and text.getText(pOffset, pOffset + 1) == "\n" and firstObj == prevObj:
+            char = AXText.get_character_at_offset(prevObj, pOffset)[0]
+            if char == "\n" and firstObj == prevObj:
                 break
 
-            onLeft = self._getContentsForObj(prevObj, pOffset, boundary)
+            onLeft = self._getContentsForObj(prevObj, pOffset, granularity)
             onLeft = list(filter(_include, onLeft))
             if not onLeft:
                 break
@@ -1831,16 +1369,22 @@ class Utilities(script_utilities.Utilities):
             firstObj, firstStart = objects[0][0], objects[0][1]
             prevObj, pOffset = self.findPreviousCaretInOrder(firstObj, firstStart)
 
+        prevEndTime = time.time()
+        msg = f"INFO: Time to get line contents on left: {prevEndTime - prevStartTime:.4f}s"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+
         # Check for things on the same line to the right of this object.
+        nextStartTime = time.time()
         while nextObj and self.getDocumentForObject(nextObj) == document:
-            text = self.queryNonEmptyText(nextObj)
-            if text and text.getText(nOffset, nOffset + 1) in [" ", "\xa0"]:
+            char = AXText.get_character_at_offset(nextObj, nOffset)[0]
+            if char.isspace():
                 nextObj, nOffset = self.findNextCaretInOrder(nextObj, nOffset)
 
-            if text and text.getText(nOffset, nOffset + 1) == "\n" and lastObj == nextObj:
+            char = AXText.get_character_at_offset(nextObj, nOffset)[0]
+            if char == "\n" and lastObj == nextObj:
                 break
 
-            onRight = self._getContentsForObj(nextObj, nOffset, boundary)
+            onRight = self._getContentsForObj(nextObj, nOffset, granularity)
             if onRight and self._contentIsSubsetOf(objects[0], onRight[-1]):
                 onRight = onRight[0:-1]
 
@@ -1850,11 +1394,15 @@ class Utilities(script_utilities.Utilities):
 
             objects.extend(onRight)
             lastObj, lastEnd = objects[-1][0], objects[-1][2]
-            if self.isMathTopLevel(lastObj):
+            if AXUtilities.is_math(lastObj):
                 lastObj, lastEnd = self.lastContext(lastObj)
                 lastEnd += 1
 
             nextObj, nOffset = self.findNextCaretInOrder(lastObj, lastEnd - 1)
+
+        nextEndTime = time.time()
+        msg = f"INFO: Time to get line contents on right: {nextEndTime - nextStartTime:.4f}s"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
 
         firstObj, firstStart, firstEnd, firstString = objects[0]
         if firstString == "\n" and len(objects) > 1:
@@ -1863,65 +1411,69 @@ class Utilities(script_utilities.Utilities):
         if useCache:
             self._currentLineContents = objects
 
+        msg = f"INFO: Time to get line contents: {time.time() - start_time:.4f}s"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+
         self._debugContentsInfo(obj, offset, objects, "Line (layout mode)")
+
+        self._canHaveCaretContextDecision = {}
         return objects
 
     def getPreviousLineContents(self, obj=None, offset=-1, layoutMode=None, useCache=True):
         if obj is None:
             obj, offset = self.getCaretContext()
 
-        msg = "WEB: Current context is: %s, %i (focus: %s)" \
-              % (obj, offset, orca_state.locusOfFocus)
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: Current context is: ", obj, ", ", offset]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
-        if obj and self.isZombie(obj):
-            msg = "WEB: Current context obj %s is zombie. Clearing cache." % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if not AXObject.is_valid(obj):
+            tokens = ["WEB: Current context obj", obj, "is not valid. Clearing cache."]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             self.clearCachedObjects()
 
             obj, offset = self.getCaretContext()
-            msg = "WEB: Now Current context is: %s, %i" % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: Now Current context is: ", obj, ", ", offset]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
         line = self.getLineContentsAtOffset(obj, offset, layoutMode, useCache)
         if not (line and line[0]):
             return []
 
         firstObj, firstOffset = line[0][0], line[0][1]
-        msg = "WEB: First context on line is: %s, %i" % (firstObj, firstOffset)
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: First context on line is: ", firstObj, ", ", firstOffset]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
-        skipSpace = not self.elementIsPreformattedText(firstObj)
+        skipSpace = not settings_manager.get_manager().get_setting("speakBlankLines")
         obj, offset = self.previousContext(firstObj, firstOffset, skipSpace)
         if not obj and firstObj:
-            msg = "WEB: Previous context is: %s, %i. Trying again." % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: Previous context is: ", obj, ", ", offset, ". Trying again."]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             self.clearCachedObjects()
             obj, offset = self.previousContext(firstObj, firstOffset, skipSpace)
 
-        msg = "WEB: Previous context is: %s, %i" % (obj, offset)
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: Previous context is: ", obj, ", ", offset]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
         contents = self.getLineContentsAtOffset(obj, offset, layoutMode, useCache)
         if not contents:
-            msg = "WEB: Could not get line contents for %s, %i" % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: Could not get line contents for ", obj, ", ", offset]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return []
 
         if line == contents:
             obj, offset = self.previousContext(obj, offset, True)
-            msg = "WEB: Got same line. Trying again with %s, %i" % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: Got same line. Trying again with ", obj, ", ", offset]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             contents = self.getLineContentsAtOffset(obj, offset, layoutMode, useCache)
 
         if line == contents:
-            start, end = self.getHyperlinkRange(obj)
-            msg = "WEB: Got same line. %s has range in %s of %i-%i" % (obj, obj.parent, start, end)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            start = AXHypertext.get_link_start_offset(obj)
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             if start >= 0:
-                obj, offset = self.previousContext(obj.parent, start, True)
-                msg = "WEB: Trying again with %s, %i" % (obj, offset)
-                debug.println(debug.LEVEL_INFO, msg, True)
+                parent = AXObject.get_parent(obj)
+                obj, offset = self.previousContext(parent, start, True)
+                tokens = ["WEB: Trying again with", obj, ", ", offset]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 contents = self.getLineContentsAtOffset(obj, offset, layoutMode, useCache)
 
         return contents
@@ -1930,18 +1482,17 @@ class Utilities(script_utilities.Utilities):
         if obj is None:
             obj, offset = self.getCaretContext()
 
-        msg = "WEB: Current context is: %s, %i (focus: %s)" \
-              % (obj, offset, orca_state.locusOfFocus)
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: Current context is: ", obj, ", ", offset]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
-        if obj and self.isZombie(obj):
-            msg = "WEB: Current context obj %s is zombie. Clearing cache." % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if not AXObject.is_valid(obj):
+            tokens = ["WEB: Current context obj", obj, "is not valid. Clearing cache."]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             self.clearCachedObjects()
 
             obj, offset = self.getCaretContext()
-            msg = "WEB: Now Current context is: %s, %i" % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: Now Current context is: ", obj, ", ", offset]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
         line = self.getLineContentsAtOffset(obj, offset, layoutMode, useCache)
         if not (line and line[0]):
@@ -1952,62 +1503,130 @@ class Utilities(script_utilities.Utilities):
         if math:
             lastObj, lastOffset = self.lastContext(math)
 
-        msg = "WEB: Last context on line is: %s, %i" % (lastObj, lastOffset)
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: Last context on line is: ", lastObj, ", ", lastOffset]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
-        skipSpace = not self.elementIsPreformattedText(lastObj)
+        skipSpace = not settings_manager.get_manager().get_setting("speakBlankLines")
         obj, offset = self.nextContext(lastObj, lastOffset, skipSpace)
         if not obj and lastObj:
-            msg = "WEB: Next context is: %s, %i. Trying again." % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: Next context is: ", obj, ", ", offset, ". Trying again."]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             self.clearCachedObjects()
             obj, offset = self.nextContext(lastObj, lastOffset, skipSpace)
 
-        msg = "WEB: Next context is: %s, %i" % (obj, offset)
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: Next context is: ", obj, ", ", offset]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
         contents = self.getLineContentsAtOffset(obj, offset, layoutMode, useCache)
         if line == contents:
             obj, offset = self.nextContext(obj, offset, True)
-            msg = "WEB: Got same line. Trying again with %s, %i" % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: Got same line. Trying again with ", obj, ", ", offset]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             contents = self.getLineContentsAtOffset(obj, offset, layoutMode, useCache)
 
         if line == contents:
-            start, end = self.getHyperlinkRange(obj)
-            msg = "WEB: Got same line. %s has range in %s of %i-%i" % (obj, obj.parent, start, end)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            end = AXHypertext.get_link_end_offset(obj)
             if end >= 0:
-                obj, offset = self.nextContext(obj.parent, end, True)
-                msg = "WEB: Trying again with %s, %i" % (obj, offset)
-                debug.println(debug.LEVEL_INFO, msg, True)
+                parent = AXObject.get_parent(obj)
+                obj, offset = self.nextContext(parent, end, True)
+                tokens = ["WEB: Trying again with", obj, ", ", offset]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 contents = self.getLineContentsAtOffset(obj, offset, layoutMode, useCache)
 
         if not contents:
-            msg = "WEB: Could not get line contents for %s, %i" % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: Could not get line contents for ", obj, ", ", offset]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return []
 
         return contents
 
-    def updateCachedTextSelection(self, obj):
-        if not self.inDocumentContent(obj):
-            super().updateCachedTextSelection(obj)
-            return
+    def _findSelectionBoundaryObject(self, root, findStart=True):
+        string = AXText.get_selected_text(root)[0]
+        if not string:
+            return None
 
-        if self.hasPresentableText(obj):
-            super().updateCachedTextSelection(obj)
+        if findStart and not string.startswith(self.EMBEDDED_OBJECT_CHARACTER):
+            return root
+
+        if not findStart and not string.endswith(self.EMBEDDED_OBJECT_CHARACTER):
+            return root
+
+        indices = list(range(AXObject.get_child_count(root)))
+        if not findStart:
+            indices.reverse()
+
+        for i in indices:
+            result = self._findSelectionBoundaryObject(AXObject.get_child(root, i), findStart)
+            if result:
+                return result
+
+        return None
+
+    def _getSelectionAnchorAndFocus(self, root):
+        obj1 = self._findSelectionBoundaryObject(root, True)
+        obj2 = self._findSelectionBoundaryObject(root, False)
+        return obj1, obj2
+
+    def _getSubtree(self, startObj, endObj):
+        if not (startObj and endObj):
+            return []
+
+        if AXObject.is_dead(startObj):
+            msg = "INFO: Cannot get subtree: Start object is dead."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return []
+
+        def _include(x):
+            return x is not None
+
+        def _exclude(x):
+            return not AXUtilities.is_web_element(x)
+
+        subtree = []
+        startObjParent = AXObject.get_parent(startObj)
+        for i in range(AXObject.get_index_in_parent(startObj),
+                        AXObject.get_child_count(startObjParent)):
+            child = AXObject.get_child(startObjParent, i)
+            if not AXUtilities.is_web_element(child):
+                continue
+            subtree.append(child)
+            subtree.extend(self.findAllDescendants(child, _include, _exclude))
+            if endObj in subtree:
+                break
+
+        if endObj == startObj:
+            return subtree
+
+        if endObj not in subtree:
+            subtree.append(endObj)
+            subtree.extend(self.findAllDescendants(endObj, _include, _exclude))
+
+        endObjParent = AXObject.get_parent(endObj)
+        endObjIndex = AXObject.get_index_in_parent(endObj)
+        lastObj = AXObject.get_child(endObjParent, endObjIndex + 1) or endObj
+
+        try:
+            endIndex = subtree.index(lastObj)
+        except ValueError:
+            pass
+        else:
+            if lastObj == endObj:
+                endIndex += 1
+            subtree = subtree[:endIndex]
+
+        return subtree
 
     def handleTextSelectionChange(self, obj, speakMessage=True):
-        if not self.inDocumentContent(obj):
+        if not self.inDocumentContent(obj) or self._script.inFocusMode():
             return super().handleTextSelectionChange(obj)
 
-        oldStart, oldEnd = self._script.pointOfReference.get('selectionAnchorAndFocus', (None, None))
+        oldStart, oldEnd = \
+            self._script.point_of_reference.get('selectionAnchorAndFocus', (None, None))
         start, end = self._getSelectionAnchorAndFocus(obj)
-        self._script.pointOfReference['selectionAnchorAndFocus'] = (start, end)
+        self._script.point_of_reference['selectionAnchorAndFocus'] = (start, end)
 
         def _cmp(obj1, obj2):
-            return self.pathComparison(pyatspi.getPath(obj1), pyatspi.getPath(obj2))
+            return self.pathComparison(AXObject.get_path(obj1), AXObject.get_path(obj2))
 
         oldSubtree = self._getSubtree(oldStart, oldEnd)
         if start == oldStart and end == oldEnd:
@@ -2021,20 +1640,16 @@ class Utilities(script_utilities.Utilities):
 
         for descendant in descendants:
             if descendant not in (oldStart, oldEnd, start, end) \
-               and pyatspi.findAncestor(descendant, lambda x: x in descendants):
-                super().updateCachedTextSelection(descendant)
+               and AXObject.find_ancestor(descendant, lambda x: x in descendants):
+                AXText.update_cached_selected_text(descendant)
             else:
                 super().handleTextSelectionChange(descendant, speakMessage)
 
         return True
 
-    def inPDFViewer(self, obj=None):
-        uri = self.documentFrameURI()
-        return uri.lower().endswith(".pdf")
-
     def inTopLevelWebApp(self, obj=None):
         if not obj:
-            obj = orca_state.locusOfFocus
+            obj = focus_manager.get_manager().get_locus_of_focus()
 
         rv = self._inTopLevelWebApp.get(hash(obj))
         if rv is not None:
@@ -2049,18 +1664,12 @@ class Utilities(script_utilities.Utilities):
         return rv
 
     def isTopLevelWebApp(self, obj):
-        try:
-            role = obj.getRole()
-        except:
-            msg = "WEB: Exception getting role for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        if role == pyatspi.ROLE_EMBEDDED and not self.getDocumentForObject(obj.parent):
-            uri = self.documentFrameURI()
+        if AXUtilities.is_embedded(obj) \
+           and not self.getDocumentForObject(AXObject.get_parent(obj)):
+            uri = AXDocument.get_uri(obj)
             rv = bool(uri and uri.startswith("http"))
-            msg = "WEB: %s is top-level web application: %s (URI: %s)" % (obj, rv, uri)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB:", obj, "is top-level web application:", rv, "(URI:", uri, ")"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return rv
 
         return False
@@ -2069,159 +1678,127 @@ class Utilities(script_utilities.Utilities):
         if not self.isWebAppDescendant(obj):
             return False
 
-        role = obj.getRole()
-        if role == pyatspi.ROLE_TOOL_TIP:
-            return obj.getState().contains(pyatspi.STATE_FOCUSED)
+        if AXUtilities.is_tool_tip(obj):
+            return AXUtilities.is_focused(obj)
 
-        if role == pyatspi.ROLE_DOCUMENT_WEB:
+        if AXUtilities.is_document_web(obj):
             return not self.isFocusModeWidget(obj)
 
         return False
 
     def isFocusModeWidget(self, obj):
-        try:
-            role = obj.getRole()
-            state = obj.getState()
-        except:
-            msg = "WEB: Exception getting role and state for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        if state.contains(pyatspi.STATE_EDITABLE):
-            msg = "WEB: %s is focus mode widget because it's editable" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if AXUtilities.is_editable(obj):
+            tokens = ["WEB:", obj, "is focus mode widget because it's editable"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return True
 
-        if state.contains(pyatspi.STATE_EXPANDABLE) and state.contains(pyatspi.STATE_FOCUSABLE):
-            msg = "WEB: %s is focus mode widget because it's expandable and focusable" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if AXUtilities.is_expandable(obj) and AXUtilities.is_focusable(obj) \
+           and not AXUtilities.is_link(obj):
+            tokens = ["WEB:", obj, "is focus mode widget because it's expandable and focusable"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return True
 
-        alwaysFocusModeRoles = [pyatspi.ROLE_COMBO_BOX,
-                                pyatspi.ROLE_ENTRY,
-                                pyatspi.ROLE_LIST_BOX,
-                                pyatspi.ROLE_MENU,
-                                pyatspi.ROLE_MENU_ITEM,
-                                pyatspi.ROLE_CHECK_MENU_ITEM,
-                                pyatspi.ROLE_RADIO_MENU_ITEM,
-                                pyatspi.ROLE_PAGE_TAB,
-                                pyatspi.ROLE_PASSWORD_TEXT,
-                                pyatspi.ROLE_PROGRESS_BAR,
-                                pyatspi.ROLE_SLIDER,
-                                pyatspi.ROLE_SPIN_BUTTON,
-                                pyatspi.ROLE_TOOL_BAR,
-                                pyatspi.ROLE_TREE_ITEM,
-                                pyatspi.ROLE_TREE_TABLE,
-                                pyatspi.ROLE_TREE]
+        alwaysFocusModeRoles = [Atspi.Role.COMBO_BOX,
+                                Atspi.Role.ENTRY,
+                                Atspi.Role.LIST_BOX,
+                                Atspi.Role.MENU,
+                                Atspi.Role.MENU_ITEM,
+                                Atspi.Role.CHECK_MENU_ITEM,
+                                Atspi.Role.RADIO_MENU_ITEM,
+                                Atspi.Role.PAGE_TAB,
+                                Atspi.Role.PASSWORD_TEXT,
+                                Atspi.Role.PROGRESS_BAR,
+                                Atspi.Role.SLIDER,
+                                Atspi.Role.SPIN_BUTTON,
+                                Atspi.Role.TOOL_BAR,
+                                Atspi.Role.TREE_ITEM,
+                                Atspi.Role.TREE_TABLE,
+                                Atspi.Role.TREE]
 
+        role = AXObject.get_role(obj)
         if role in alwaysFocusModeRoles:
-            msg = "WEB: %s is focus mode widget due to its role" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB:", obj, "is focus mode widget due to its role"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return True
 
-        if role in [pyatspi.ROLE_TABLE_CELL, pyatspi.ROLE_TABLE] \
-           and self.isLayoutOnly(self.getTable(obj)):
-            msg = "WEB: %s is not focus mode widget because it's layout only" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if role in [Atspi.Role.TABLE_CELL, Atspi.Role.TABLE] \
+           and AXTable.is_layout_table(AXTable.get_table(obj)):
+            tokens = ["WEB:", obj, "is not focus mode widget because it's layout only"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return False
 
-        if self.isButtonWithPopup(obj):
-            msg = "WEB: %s is focus mode widget because it's a button with popup" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if AXUtilities.is_list_box_item(obj, role):
+            tokens = ["WEB:", obj, "is focus mode widget because it's a listbox item"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return True
 
-        focusModeRoles = [pyatspi.ROLE_EMBEDDED,
-                          pyatspi.ROLE_LIST_ITEM,
-                          pyatspi.ROLE_TABLE_CELL,
-                          pyatspi.ROLE_TABLE]
+        if AXUtilities.is_button_with_popup(obj, role):
+            tokens = ["WEB:", obj, "is focus mode widget because it's a button with popup"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return True
+
+        focusModeRoles = [Atspi.Role.EMBEDDED,
+                          Atspi.Role.TABLE_CELL,
+                          Atspi.Role.TABLE]
 
         if role in focusModeRoles \
            and not self.isTextBlockElement(obj) \
            and not self.hasNameAndActionAndNoUsefulChildren(obj) \
-           and not self.inPDFViewer(obj):
-            msg = "WEB: %s is focus mode widget based on presumed functionality" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+           and not AXDocument.is_pdf(self.documentFrame()):
+            tokens = ["WEB:", obj, "is focus mode widget based on presumed functionality"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return True
 
         if self.isGridDescendant(obj):
-            msg = "WEB: %s is focus mode widget because it's a grid descendant" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB:", obj, "is focus mode widget because it's a grid descendant"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return True
 
         if self.isMenuDescendant(obj):
-            msg = "WEB: %s is focus mode widget because it's a menu descendant" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB:", obj, "is focus mode widget because it's a menu descendant"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return True
 
         if self.isToolBarDescendant(obj):
-            msg = "WEB: %s is focus mode widget because it's a toolbar descendant" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB:", obj, "is focus mode widget because it's a toolbar descendant"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return True
 
         if self.isContentEditableWithEmbeddedObjects(obj):
-            msg = "WEB: %s is focus mode widget because it's content editable" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB:", obj, "is focus mode widget because it's content editable"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return True
 
         return False
 
-    def _cellRoles(self):
-        roles = [pyatspi.ROLE_TABLE_CELL,
-                 pyatspi.ROLE_TABLE_COLUMN_HEADER,
-                 pyatspi.ROLE_TABLE_ROW_HEADER,
-                 pyatspi.ROLE_ROW_HEADER,
-                 pyatspi.ROLE_COLUMN_HEADER]
-
-        return roles
-
     def _textBlockElementRoles(self):
-        roles = [pyatspi.ROLE_ARTICLE,
-                 pyatspi.ROLE_CAPTION,
-                 pyatspi.ROLE_COLUMN_HEADER,
-                 pyatspi.ROLE_COMMENT,
-                 pyatspi.ROLE_DEFINITION,
-                 pyatspi.ROLE_DESCRIPTION_LIST,
-                 pyatspi.ROLE_DESCRIPTION_TERM,
-                 pyatspi.ROLE_DESCRIPTION_VALUE,
-                 pyatspi.ROLE_DOCUMENT_FRAME,
-                 pyatspi.ROLE_DOCUMENT_WEB,
-                 pyatspi.ROLE_FOOTER,
-                 pyatspi.ROLE_FORM,
-                 pyatspi.ROLE_HEADING,
-                 pyatspi.ROLE_LIST,
-                 pyatspi.ROLE_LIST_ITEM,
-                 pyatspi.ROLE_PARAGRAPH,
-                 pyatspi.ROLE_ROW_HEADER,
-                 pyatspi.ROLE_SECTION,
-                 pyatspi.ROLE_STATIC,
-                 pyatspi.ROLE_TEXT,
-                 pyatspi.ROLE_TABLE_CELL]
-
-        # Remove this check when we bump dependencies to 2.34
-        try:
-            roles.append(pyatspi.ROLE_CONTENT_DELETION)
-            roles.append(pyatspi.ROLE_CONTENT_INSERTION)
-        except:
-            pass
-
-        # Remove this check when we bump dependencies to 2.36
-        try:
-            roles.append(pyatspi.ROLE_MARK)
-            roles.append(pyatspi.ROLE_SUGGESTION)
-        except:
-            pass
+        roles = [Atspi.Role.ARTICLE,
+                 Atspi.Role.CAPTION,
+                 Atspi.Role.COLUMN_HEADER,
+                 Atspi.Role.COMMENT,
+                 Atspi.Role.CONTENT_DELETION,
+                 Atspi.Role.CONTENT_INSERTION,
+                 Atspi.Role.DEFINITION,
+                 Atspi.Role.DESCRIPTION_LIST,
+                 Atspi.Role.DESCRIPTION_TERM,
+                 Atspi.Role.DESCRIPTION_VALUE,
+                 Atspi.Role.DOCUMENT_FRAME,
+                 Atspi.Role.DOCUMENT_WEB,
+                 Atspi.Role.FOOTER,
+                 Atspi.Role.FORM,
+                 Atspi.Role.HEADING,
+                 Atspi.Role.LIST,
+                 Atspi.Role.LIST_ITEM,
+                 Atspi.Role.MARK,
+                 Atspi.Role.PARAGRAPH,
+                 Atspi.Role.ROW_HEADER,
+                 Atspi.Role.SECTION,
+                 Atspi.Role.STATIC,
+                 Atspi.Role.SUGGESTION,
+                 Atspi.Role.TEXT,
+                 Atspi.Role.TABLE_CELL]
 
         return roles
-
-    def mnemonicShortcutAccelerator(self, obj):
-        attrs = self.objectAttributes(obj)
-        keys = map(lambda x: x.replace("+", " "), attrs.get("keyshortcuts", "").split(" "))
-        keys = map(lambda x: x.replace(" ", "+"), map(self.labelFromKeySequence, keys))
-        rv = ["", " ".join(keys), ""]
-        if list(filter(lambda x: x, rv)):
-            return rv
-
-        return super().mnemonicShortcutAccelerator(obj)
 
     def unrelatedLabels(self, root, onlyShowing=True, minimumWords=3):
         if not (root and self.inDocumentContent(root)):
@@ -2237,19 +1814,12 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        try:
-            state = obj.getState()
-        except:
-            msg = "WEB: Exception getting state for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
         rv = False
-        if state.contains(pyatspi.STATE_FOCUSABLE) and not self.isDocument(obj):
-            for child in obj:
-                if self.isMathTopLevel(child):
-                    rv = True
-                    break
+        if AXUtilities.is_focusable(obj) \
+            and not self.isDocument(obj):
+            for child in AXObject.iter_children(obj, AXUtilities.is_math):
+                rv = True
+                break
 
         self._isFocusableWithMathChild[hash(obj)] = rv
         return rv
@@ -2257,15 +1827,7 @@ class Utilities(script_utilities.Utilities):
     def isFocusedWithMathChild(self, obj):
         if not self.isFocusableWithMathChild(obj):
             return False
-
-        try:
-            state = obj.getState()
-        except:
-            msg = "WEB: Exception getting state for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        return state.contains(pyatspi.STATE_FOCUSED)
+        return AXUtilities.is_focused(obj)
 
     def isTextBlockElement(self, obj):
         if not (obj and self.inDocumentContent(obj)):
@@ -2275,27 +1837,21 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        try:
-            role = obj.getRole()
-            state = obj.getState()
-            interfaces = pyatspi.listInterfaces(obj)
-        except:
-            msg = "WEB: Exception getting role and state for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
+        role = AXObject.get_role(obj)
         textBlockElements = self._textBlockElementRoles()
-        if not role in textBlockElements:
+        if role not in textBlockElements:
             rv = False
-        elif not "Text" in interfaces:
+        elif not AXObject.supports_text(obj):
             rv = False
-        elif state.contains(pyatspi.STATE_EDITABLE):
+        elif AXUtilities.is_editable(obj):
             rv = False
-        elif self.isGridCell(obj):
+        elif AXUtilities.is_grid_cell(obj):
             rv = False
-        elif role in [pyatspi.ROLE_DOCUMENT_FRAME, pyatspi.ROLE_DOCUMENT_WEB]:
+        elif AXUtilities.is_document(obj):
             rv = True
-        elif not state.contains(pyatspi.STATE_FOCUSABLE) and not state.contains(pyatspi.STATE_FOCUSED):
+        elif self.isCustomImage(obj):
+            rv = False
+        elif not AXUtilities.is_focusable(obj):
             rv = not self.hasNameAndActionAndNoUsefulChildren(obj)
         else:
             rv = False
@@ -2304,503 +1860,103 @@ class Utilities(script_utilities.Utilities):
         return rv
 
     def _advanceCaretInEmptyObject(self, obj):
-        role = obj.getRole()
-        if role == pyatspi.ROLE_TABLE_CELL and not self.queryNonEmptyText(obj):
-            return not self._script._lastCommandWasStructNav
+        if AXUtilities.is_table_cell(obj) and not self.treatAsTextObject(obj):
+            return not self._script.caret_navigation.last_input_event_was_navigation_command()
 
         return True
-
-    def textAtPoint(self, obj, x, y, coordType=None, boundary=None):
-        if coordType is None:
-            coordType = pyatspi.DESKTOP_COORDS
-
-        if boundary is None:
-            boundary = pyatspi.TEXT_BOUNDARY_LINE_START
-
-        string, start, end = super().textAtPoint(obj, x, y, coordType, boundary)
-        if string == self.EMBEDDED_OBJECT_CHARACTER:
-            child = self.getChildAtOffset(obj, start)
-            if child:
-                return self.textAtPoint(child, x, y, coordType, boundary)
-
-        return string, start, end
-
-    def _treatAlertsAsDialogs(self):
-        return False
 
     def treatAsDiv(self, obj, offset=None):
         if not (obj and self.inDocumentContent(obj)):
             return False
 
-        try:
-            role = obj.getRole()
-            childCount = obj.childCount
-        except:
-            msg = "WEB: Exception getting role and childCount for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if AXUtilities.is_description_list(obj):
             return False
 
-        if role == pyatspi.ROLE_LIST and offset is not None:
-            string = self.substring(obj, offset, offset + 1)
+        if AXUtilities.is_list(obj) and offset is not None:
+            string = AXText.get_substring(obj, offset, offset + 1)
             if string and string != self.EMBEDDED_OBJECT_CHARACTER:
                 return True
 
-        if role == pyatspi.ROLE_PANEL and not childCount:
+        childCount = AXObject.get_child_count(obj)
+        if AXUtilities.is_panel(obj) and not childCount:
             return True
 
         rv = self._treatAsDiv.get(hash(obj))
         if rv is not None:
             return rv
 
-        validRoles = self._validChildRoles.get(role)
+        validRoles = self._validChildRoles.get(AXObject.get_role(obj))
         if validRoles:
             if not childCount:
                 rv = True
             else:
-                rv = bool([x for x in obj if x and x.getRole() not in validRoles])
+                def pred1(x):
+                    return x is not None and AXObject.get_role(x) not in validRoles
+
+                rv = bool([x for x in AXObject.iter_children(obj, pred1)])
 
         if not rv:
-            validRoles = self._validChildRoles.get(obj.parent)
+            parent = AXObject.get_parent(obj)
+            validRoles = self._validChildRoles.get(parent)
             if validRoles:
-                rv = bool([x for x in obj.parent if x and x.getRole() not in validRoles])
+                def pred2(x):
+                    return x is not None and AXObject.get_role(x) not in validRoles
+
+                rv = bool([x for x in AXObject.iter_children(parent, pred2)])
 
         self._treatAsDiv[hash(obj)] = rv
         return rv
-
-    def isAriaAlert(self, obj):
-        return 'alert' in self._getXMLRoles(obj)
-
-    def isBlockquote(self, obj):
-        if super().isBlockquote(obj):
-            return True
-
-        return self._getTag(obj) == 'blockquote'
-
-    def isComment(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().isComment(obj)
-
-        if obj.getRole() == pyatspi.ROLE_COMMENT:
-            return True
-
-        return 'comment' in self._getXMLRoles(obj)
-
-    def isContentDeletion(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().isContentDeletion(obj)
-
-        # Remove this check when we bump dependencies to 2.34
-        try:
-            if obj.getRole() == pyatspi.ROLE_CONTENT_DELETION:
-                return True
-        except:
-            pass
-
-        return 'deletion' in self._getXMLRoles(obj) or 'del' == self._getTag(obj)
 
     def isContentError(self, obj):
         if not (obj and self.inDocumentContent(obj)):
             return super().isContentError(obj)
 
-        if obj.getRole() not in self._textBlockElementRoles():
+        if AXObject.get_role(obj) not in self._textBlockElementRoles():
             return False
 
-        return obj.getState().contains(pyatspi.STATE_INVALID_ENTRY)
-
-    def isContentInsertion(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().isContentInsertion(obj)
-
-        # Remove this check when we bump dependencies to 2.34
-        try:
-            if obj.getRole() == pyatspi.ROLE_CONTENT_INSERTION:
-                return True
-        except:
-            pass
-
-        return 'insertion' in self._getXMLRoles(obj) or 'ins' == self._getTag(obj)
-
-    def isContentMarked(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().isContentMarked(obj)
-
-        # Remove this check when we bump dependencies to 2.36
-        try:
-            if obj.getRole() == pyatspi.ROLE_MARK:
-                return True
-        except:
-            pass
-
-        return 'mark' in self._getXMLRoles(obj) or 'mark' == self._getTag(obj)
-
-    def isContentSuggestion(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().isContentSuggestion(obj)
-
-        # Remove this check when we bump dependencies to 2.36
-        try:
-            if obj.getRole() == pyatspi.ROLE_SUGGESTION:
-                return True
-        except:
-            pass
-
-        return 'suggestion' in self._getXMLRoles(obj)
-
-    def isInlineIframe(self, obj):
-        if not (obj and obj.getRole() == pyatspi.ROLE_INTERNAL_FRAME):
-            return False
-
-        displayStyle = self._getDisplayStyle(obj)
-        if "inline" not in displayStyle:
-            return False
-
-        return self.documentForObject(obj) is not None
+        return AXUtilities.is_invalid_entry(obj)
 
     def isInlineIframeDescendant(self, obj):
-        if not obj:
-            return False
-
-        rv = self._isInlineIframeDescendant.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        ancestor = pyatspi.findAncestor(obj, self.isInlineIframe)
-        rv = ancestor is not None
-        self._isInlineIframeDescendant[hash(obj)] = rv
-        return rv
-
-    def isInlineSuggestion(self, obj):
-        if not self.isContentSuggestion(obj):
-            return False
-
-        displayStyle = self._getDisplayStyle(obj)
-        return "inline" in displayStyle
-
-    def isFirstItemInInlineContentSuggestion(self, obj):
-        suggestion = pyatspi.findAncestor(obj, self.isInlineSuggestion)
-        if not (suggestion and suggestion.childCount):
-            return False
-
-        return suggestion[0] == obj
-
-    def isLastItemInInlineContentSuggestion(self, obj):
-        suggestion = pyatspi.findAncestor(obj, self.isInlineSuggestion)
-        if not (suggestion and suggestion.childCount):
-            return False
-
-        return suggestion[-1] == obj
-
-    def speakMathSymbolNames(self, obj=None):
-        obj = obj or orca_state.locusOfFocus
-        return self.isMath(obj)
-
-    def isInMath(self):
-        return self.isMath(orca_state.locusOfFocus)
-
-    def isMath(self, obj):
-        tag = self._getTag(obj)
-        rv = tag in ['math',
-                     'maction',
-                     'maligngroup',
-                     'malignmark',
-                     'menclose',
-                     'merror',
-                     'mfenced',
-                     'mfrac',
-                     'mglyph',
-                     'mi',
-                     'mlabeledtr',
-                     'mlongdiv',
-                     'mmultiscripts',
-                     'mn',
-                     'mo',
-                     'mover',
-                     'mpadded',
-                     'mphantom',
-                     'mprescripts',
-                     'mroot',
-                     'mrow',
-                     'ms',
-                     'mscarries',
-                     'mscarry',
-                     'msgroup',
-                     'msline',
-                     'mspace',
-                     'msqrt',
-                     'msrow',
-                     'mstack',
-                     'mstyle',
-                     'msub',
-                     'msup',
-                     'msubsup',
-                     'mtable',
-                     'mtd',
-                     'mtext',
-                     'mtr',
-                     'munder',
-                     'munderover']
-
-        return rv
-
-    def isNoneElement(self, obj):
-        return self._getTag(obj) == 'none'
-
-    def isMathLayoutOnly(self, obj):
-        return self._getTag(obj) in ['mrow', 'mstyle', 'merror', 'mpadded']
-
-    def isMathMultiline(self, obj):
-        return self._getTag(obj) in ['mtable', 'mstack', 'mlongdiv']
-
-    def isMathEnclose(self, obj):
-        return self._getTag(obj) == 'menclose'
-
-    def isMathFenced(self, obj):
-        return self._getTag(obj) == 'mfenced'
-
-    def isMathFractionWithoutBar(self, obj):
-        try:
-            role = obj.getRole()
-        except:
-            msg = "ERROR: Exception getting role for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-
-        if role != pyatspi.ROLE_MATH_FRACTION:
-            return False
-
-        attrs = self.objectAttributes(obj)
-        linethickness = attrs.get('linethickness')
-        if not linethickness:
-            return False
-
-        for char in linethickness:
-            if char.isnumeric() and char != '0':
-                return False
-
-        return True
-
-    def isMathPhantom(self, obj):
-        return self._getTag(obj) == 'mphantom'
-
-    def isMathMultiScript(self, obj):
-        return self._getTag(obj) == 'mmultiscripts'
-
-    def _isMathPrePostScriptSeparator(self, obj):
-        return self._getTag(obj) == 'mprescripts'
-
-    def isMathSubOrSuperScript(self, obj):
-        return self._getTag(obj) in ['msub', 'msup', 'msubsup']
-
-    def isMathTable(self, obj):
-        return self._getTag(obj) == 'mtable'
-
-    def isMathTableRow(self, obj):
-        return self._getTag(obj) in ['mtr', 'mlabeledtr']
-
-    def isMathTableCell(self, obj):
-        return self._getTag(obj) == 'mtd'
-
-    def isMathUnderOrOverScript(self, obj):
-        return self._getTag(obj) in ['mover', 'munder', 'munderover']
-
-    def _isMathSubElement(self, obj):
-        return self._getTag(obj) == 'msub'
-
-    def _isMathSupElement(self, obj):
-        return self._getTag(obj) == 'msup'
-
-    def _isMathSubsupElement(self, obj):
-        return self._getTag(obj) == 'msubsup'
-
-    def _isMathUnderElement(self, obj):
-        return self._getTag(obj) == 'munder'
-
-    def _isMathOverElement(self, obj):
-        return self._getTag(obj) == 'mover'
-
-    def _isMathUnderOverElement(self, obj):
-        return self._getTag(obj) == 'munderover'
-
-    def isMathSquareRoot(self, obj):
-        return self._getTag(obj) == 'msqrt'
-
-    def isMathToken(self, obj):
-        return self._getTag(obj) in ['mi', 'mn', 'mo', 'mtext', 'ms', 'mspace']
-
-    def isMathTopLevel(self, obj):
-        return obj.getRole() == pyatspi.ROLE_MATH
+        ancestor = AXObject.find_ancestor(obj, AXUtilities.is_inline_iframe)
+        return ancestor is not None
 
     def getMathAncestor(self, obj):
-        if not self.isMath(obj):
+        if not AXUtilities.is_math_related(obj):
             return None
 
-        if self.isMathTopLevel(obj):
+        if AXUtilities.is_math(obj):
             return obj
 
-        return pyatspi.findAncestor(obj, self.isMathTopLevel)
-
-    def getMathDenominator(self, obj):
-        try:
-            return obj[1]
-        except:
-            pass
-
-        return None
-
-    def getMathNumerator(self, obj):
-        try:
-            return obj[0]
-        except:
-            pass
-
-        return None
-
-    def getMathRootBase(self, obj):
-        if self.isMathSquareRoot(obj):
-            return obj
-
-        try:
-            return obj[0]
-        except:
-            pass
-
-        return None
-
-    def getMathRootIndex(self, obj):
-        try:
-            return obj[1]
-        except:
-            pass
-
-        return None
-
-    def getMathScriptBase(self, obj):
-        if self.isMathSubOrSuperScript(obj) \
-           or self.isMathUnderOrOverScript(obj) \
-           or self.isMathMultiScript(obj):
-            return obj[0]
-
-        return None
-
-    def getMathScriptSubscript(self, obj):
-        if self._isMathSubElement(obj) or self._isMathSubsupElement(obj):
-            return obj[1]
-
-        return None
-
-    def getMathScriptSuperscript(self, obj):
-        if self._isMathSupElement(obj):
-            return obj[1]
-
-        if self._isMathSubsupElement(obj):
-            return obj[2]
-
-        return None
-
-    def getMathScriptUnderscript(self, obj):
-        if self._isMathUnderElement(obj) or self._isMathUnderOverElement(obj):
-            return obj[1]
-
-        return None
-
-    def getMathScriptOverscript(self, obj):
-        if self._isMathOverElement(obj):
-            return obj[1]
-
-        if self._isMathUnderOverElement(obj):
-            return obj[2]
-
-        return None
-
-    def _getMathPrePostScriptSeparator(self, obj):
-        for child in obj:
-            if self._isMathPrePostScriptSeparator(child):
-                return child
-
-        return None
-
-    def getMathPrescripts(self, obj):
-        separator = self._getMathPrePostScriptSeparator(obj)
-        if not separator:
-            return []
-
-        index = separator.getIndexInParent()
-        return [obj[i] for i in range(index+1, obj.childCount)]
-
-    def getMathPostscripts(self, obj):
-        separator = self._getMathPrePostScriptSeparator(obj)
-        if separator:
-            index = separator.getIndexInParent()
-        else:
-            index = obj.childCount
-
-        return [obj[i] for i in range(1, index)]
-
-    def getMathEnclosures(self, obj):
-        if not self.isMathEnclose(obj):
-            return []
-
-        attrs = self.objectAttributes(obj)
-        return attrs.get('notation', 'longdiv').split()
-
-    def getMathFencedSeparators(self, obj):
-        if not self.isMathFenced(obj):
-            return ['']
-
-        attrs = self.objectAttributes(obj)
-        return list(attrs.get('separators', ','))
-
-    def getMathFences(self, obj):
-        if not self.isMathFenced(obj):
-            return ['', '']
-
-        attrs = self.objectAttributes(obj)
-        return [attrs.get('open', '('), attrs.get('close', ')')]
-
-    def getMathNestingLevel(self, obj, test=None):
-        rv = self._mathNestingLevel.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        if not test:
-            test = lambda x: self._getTag(x) == self._getTag(obj)
-
-        rv = -1
-        ancestor = obj
-        while ancestor:
-            ancestor = pyatspi.findAncestor(ancestor, test)
-            rv += 1
-
-        self._mathNestingLevel[hash(obj)] = rv
-        return rv
+        return AXObject.find_ancestor(obj, AXUtilities.is_math)
 
     def filterContentsForPresentation(self, contents, inferLabels=False):
         def _include(x):
             obj, start, end, string = x
-            if not obj or self.isDead(obj):
+            if not obj or AXObject.is_dead(obj):
                 return False
 
             rv = self._shouldFilter.get(hash(obj))
             if rv is not None:
                 return rv
 
-            displayedText = string or obj.name
+            text = string or AXObject.get_name(obj)
             rv = True
-            if ((self.isTextBlockElement(obj) or self.isLink(obj)) and not displayedText) \
+            if ((self.isTextBlockElement(obj) or self.isLink(obj)) and not text) \
                or (self.isContentEditableWithEmbeddedObjects(obj) and not string.strip()) \
                or self.isEmptyAnchor(obj) \
-               or (self.hasNoSize(obj) and not displayedText) \
+               or (AXComponent.has_no_size(obj) and not text) \
                or self.isHidden(obj) \
                or self.isOffScreenLabel(obj) \
                or self.isUselessImage(obj) \
                or self.isErrorForContents(obj, contents) \
                or self.isLabellingContents(obj, contents):
                 rv = False
-            elif obj.getRole() == pyatspi.ROLE_TABLE_ROW:
-                rv = self.hasExplicitName(obj)
+            elif AXUtilities.is_table_row(obj):
+                rv = AXUtilities.has_explicit_name(obj)
             else:
                 widget = self.isInferredLabelForContents(x, contents)
-                alwaysFilter = [pyatspi.ROLE_RADIO_BUTTON, pyatspi.ROLE_CHECK_BOX]
-                if widget and (inferLabels or widget.getRole() in alwaysFilter):
+                alwaysFilter = [Atspi.Role.RADIO_BUTTON, Atspi.Role.CHECK_BOX]
+                if widget and (inferLabels or AXObject.get_role(widget) in alwaysFilter):
                     rv = False
 
             self._shouldFilter[hash(obj)] = rv
@@ -2827,8 +1983,31 @@ class Utilities(script_utilities.Utilities):
         return lastChar.isalnum()
 
     def supportsSelectionAndTable(self, obj):
-        interfaces = pyatspi.listInterfaces(obj)
-        return 'Table' in interfaces and 'Selection' in interfaces
+        return AXObject.supports_table(obj) and AXObject.supports_selection(obj)
+
+    def hasGridDescendant(self, obj):
+        if not obj:
+            return False
+
+        rv = self._hasGridDescendant.get(hash(obj))
+        if rv is not None:
+            return rv
+
+        if not AXObject.get_child_count(obj):
+            rv = False
+        else:
+            document = self.documentFrame(obj)
+            if obj != document:
+                document_has_grids = self.hasGridDescendant(document)
+                if not document_has_grids:
+                    rv = False
+
+        if rv is None:
+            grids = AXUtilities.find_all_grids(obj)
+            rv = bool(grids)
+
+        self._hasGridDescendant[hash(obj)] = rv
+        return rv
 
     def isGridDescendant(self, obj):
         if not obj:
@@ -2838,118 +2017,44 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        rv = pyatspi.findAncestor(obj, self.supportsSelectionAndTable) is not None
+        rv = AXObject.find_ancestor(obj, self.supportsSelectionAndTable) is not None
         self._isGridDescendant[hash(obj)] = rv
         return rv
 
-    def isSorted(self, obj):
-        attrs = self.objectAttributes(obj, False)
-        return not attrs.get("sort") in ("none", None)
-
-    def isAscending(self, obj):
-        attrs = self.objectAttributes(obj, False)
-        return attrs.get("sort") == "ascending"
-
-    def isDescending(self, obj):
-        attrs = self.objectAttributes(obj, False)
-        return attrs.get("sort") == "descending"
-
-    def _rowAndColumnIndices(self, obj):
-        rowindex = colindex = None
-
-        attrs = self.objectAttributes(obj)
-        rowindex = attrs.get('rowindex')
-        colindex = attrs.get('colindex')
-        if rowindex is not None and colindex is not None:
-            return rowindex, colindex
-
-        isRow = lambda x: x and x.getRole() == pyatspi.ROLE_TABLE_ROW
-        row = pyatspi.findAncestor(obj, isRow)
-        if not row:
-            return rowindex, colindex
-
-        attrs = self.objectAttributes(row)
-        rowindex = attrs.get('rowindex', rowindex)
-        colindex = attrs.get('colindex', colindex)
-        return rowindex, colindex
-
     def isCellWithNameFromHeader(self, obj):
-        role = obj.getRole()
-        if role != pyatspi.ROLE_TABLE_CELL:
+        if not AXUtilities.is_table_cell(obj):
             return False
 
-        header = self.columnHeaderForCell(obj)
-        if header and header.name and header.name == obj.name:
-            return True
+        name = AXObject.get_name(obj)
+        if not name:
+            return False
 
-        header = self.rowHeaderForCell(obj)
-        if header and header.name and header.name == obj.name:
-            return True
+        headers = AXTable.get_column_headers(obj)
+        for header in headers:
+            if AXObject.get_name(header) == name:
+                return True
+
+        headers = AXTable.get_row_headers(obj)
+        for header in headers:
+            if AXObject.get_name(header) == name:
+                return True
 
         return False
 
-    def labelForCellCoordinates(self, obj):
-        attrs = self.objectAttributes(obj)
-
-        # The ARIA feature is still in the process of being discussed.
-        collabel = attrs.get('colindextext', attrs.get('coltext'))
-        rowlabel = attrs.get('rowindextext', attrs.get('rowtext'))
-        if collabel is not None and rowlabel is not None:
-            return '%s%s' % (collabel, rowlabel)
-
-        isRow = lambda x: x and x.getRole() == pyatspi.ROLE_TABLE_ROW
-        row = pyatspi.findAncestor(obj, isRow)
-        if not row:
-            return ''
-
-        attrs = self.objectAttributes(row)
-        collabel = attrs.get('colindextext', attrs.get('coltext', collabel))
-        rowlabel = attrs.get('rowindextext', attrs.get('rowtext', rowlabel))
-        if collabel is not None and rowlabel is not None:
-            return '%s%s' % (collabel, rowlabel)
-
-        return ''
-
-    def coordinatesForCell(self, obj, preferAttribute=True):
-        roles = [pyatspi.ROLE_TABLE_CELL,
-                 pyatspi.ROLE_TABLE_COLUMN_HEADER,
-                 pyatspi.ROLE_TABLE_ROW_HEADER,
-                 pyatspi.ROLE_COLUMN_HEADER,
-                 pyatspi.ROLE_ROW_HEADER]
-        if not (obj and obj.getRole() in roles):
-            return -1, -1
-
-        if preferAttribute:
-            rowindex, colindex = self._rowAndColumnIndices(obj)
-            if rowindex is not None and colindex is not None:
-                return int(rowindex) - 1, int(colindex) - 1
-
-        return super().coordinatesForCell(obj, preferAttribute)
-
-    def rowAndColumnCount(self, obj, preferAttribute=True):
-        rows, cols = super().rowAndColumnCount(obj)
-        if not preferAttribute:
-            return rows, cols
-
-        attrs = self.objectAttributes(obj)
-        rows = attrs.get('rowcount', rows)
-        cols = attrs.get('colcount', cols)
-        return int(rows), int(cols)
-
-    def shouldReadFullRow(self, obj):
+    def shouldReadFullRow(self, obj, prevObj=None):
         if not (obj and self.inDocumentContent(obj)):
-            return super().shouldReadFullRow(obj)
+            return super().shouldReadFullRow(obj, prevObj)
 
-        if not super().shouldReadFullRow(obj):
+        if not super().shouldReadFullRow(obj, prevObj):
             return False
 
         if self.isGridDescendant(obj):
             return not self._script.inFocusMode()
 
-        if self.lastInputEventWasLineNav():
+        if input_event_manager.get_manager().last_event_was_line_navigation():
             return False
 
-        if self.lastInputEventWasMouseButton():
+        if input_event_manager.get_manager().last_event_was_mouse_button():
             return False
 
         return True
@@ -2962,8 +2067,7 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        isEntry = lambda x: x and x.getRole() == pyatspi.ROLE_ENTRY
-        rv = pyatspi.findAncestor(obj, isEntry) is not None
+        rv = AXObject.find_ancestor(obj, AXUtilities.is_entry) is not None
         self._isEntryDescendant[hash(obj)] = rv
         return rv
 
@@ -2975,13 +2079,9 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        isLabel = lambda x: x and x.getRole() in [pyatspi.ROLE_LABEL, pyatspi.ROLE_CAPTION]
-        rv = pyatspi.findAncestor(obj, isLabel) is not None
+        rv = AXObject.find_ancestor(obj, AXUtilities.is_label_or_caption) is not None
         self._isLabelDescendant[hash(obj)] = rv
         return rv
-
-    def isMenuInCollapsedSelectElement(self, obj):
-        return False
 
     def isMenuDescendant(self, obj):
         if not obj:
@@ -2991,8 +2091,7 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        isMenu = lambda x: x and x.getRole() == pyatspi.ROLE_MENU
-        rv = pyatspi.findAncestor(obj, isMenu) is not None
+        rv = AXObject.find_ancestor(obj, AXUtilities.is_menu) is not None
         self._isMenuDescendant[hash(obj)] = rv
         return rv
 
@@ -3004,11 +2103,10 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        isToolTip = lambda x: x and x.getRole() == pyatspi.ROLE_TOOL_TIP
-        if isToolTip(obj):
+        if AXUtilities.is_tool_tip(obj):
             ancestor = obj
         else:
-            ancestor = pyatspi.findAncestor(obj, isToolTip)
+            ancestor = AXObject.find_ancestor(obj, AXUtilities.is_tool_tip)
         rv = ancestor and not self.isNonNavigablePopup(ancestor)
         self._isNavigableToolTipDescendant[hash(obj)] = rv
         return rv
@@ -3021,8 +2119,7 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        isToolBar = lambda x: x and x.getRole() == pyatspi.ROLE_TOOL_BAR
-        rv = pyatspi.findAncestor(obj, isToolBar) is not None
+        rv = AXObject.find_ancestor(obj, AXUtilities.is_tool_bar) is not None
         self._isToolBarDescendant[hash(obj)] = rv
         return rv
 
@@ -3034,100 +2131,26 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        isEmbedded = lambda x: x and x.getRole() == pyatspi.ROLE_EMBEDDED
-        rv = pyatspi.findAncestor(obj, isEmbedded) is not None
+        rv = AXObject.find_ancestor(obj, AXUtilities.is_embedded) is not None
         self._isWebAppDescendant[hash(obj)] = rv
         return rv
-
-    def isLayoutOnly(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().isLayoutOnly(obj)
-
-        rv = self._isLayoutOnly.get(hash(obj))
-        if rv is not None:
-            if rv:
-                msg = "WEB: %s is deemed to be layout only" % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
-            return rv
-
-        try:
-            role = obj.getRole()
-            state = obj.getState()
-        except:
-            msg = "ERROR: Exception getting role and state for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        if role == pyatspi.ROLE_LIST:
-            rv = self.treatAsDiv(obj)
-        elif self.isMath(obj):
-            rv = False
-        elif self.isLandmark(obj):
-            rv = False
-        elif self.isContentDeletion(obj):
-            rv = False
-        elif self.isContentInsertion(obj):
-            rv = False
-        elif self.isContentMarked(obj):
-            rv = False
-        elif self.isContentSuggestion(obj):
-            rv = False
-        elif self.isDPub(obj):
-            rv = False
-        elif self.isFeed(obj):
-            rv = False
-        elif self.isFigure(obj):
-            rv = False
-        elif self.isGrid(obj):
-            rv = False
-        elif role in [pyatspi.ROLE_COLUMN_HEADER, pyatspi.ROLE_ROW_HEADER]:
-            rv = False
-        elif role == pyatspi.ROLE_SEPARATOR:
-            rv = False
-        elif role == pyatspi.ROLE_PANEL:
-            rv = not self.hasExplicitName(obj)
-        elif role == pyatspi.ROLE_TABLE_ROW and not state.contains(pyatspi.STATE_EXPANDABLE):
-            rv = not self.hasExplicitName(obj)
-        else:
-            rv = super().isLayoutOnly(obj)
-
-        if rv:
-            msg = "WEB: %s is deemed to be layout only" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-
-        self._isLayoutOnly[hash(obj)] = rv
-        return rv
-
-    def elementIsPreformattedText(self, obj):
-        if self._getTag(obj) in ["pre", "code"]:
-            return True
-
-        if "code" in self._getXMLRoles(obj):
-            return True
-
-        return False
 
     def elementLinesAreSingleWords(self, obj):
         if not (obj and self.inDocumentContent(obj)):
             return False
 
-        if self.elementIsPreformattedText(obj):
+        if AXUtilities.is_code(obj):
             return False
 
         rv = self._elementLinesAreSingleWords.get(hash(obj))
         if rv is not None:
             return rv
 
-        text = self.queryNonEmptyText(obj)
-        if not text:
-            return False
-
-        try:
-            nChars = text.characterCount
-        except:
-            return False
-
+        nChars = AXText.get_character_count(obj)
         if not nChars:
+            return False
+
+        if not self.treatAsTextObject(obj):
             return False
 
         # If we have a series of embedded object characters, there's a reasonable chance
@@ -3136,28 +2159,23 @@ class Utilities(script_utilities.Utilities):
         # CSSified text we're trying to detect can have embedded object characters. So
         # if we have more than 30% EOCs, don't use this workaround. (The 30% is based on
         # testing with problematic text.)
-        eocs = re.findall(self.EMBEDDED_OBJECT_CHARACTER, text.getText(0, -1))
+        string = AXText.get_all_text(obj)
+        eocs = re.findall("\ufffc", string)
         if len(eocs)/nChars > 0.3:
             return False
 
-        try:
-            obj.clearCache()
-            state = obj.getState()
-        except:
-            msg = "ERROR: Exception getting state for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        tokens = list(filter(lambda x: x, re.split(r"[\s\ufffc]", text.getText(0, -1))))
+        # TODO - JD: Can we remove this?
+        AXObject.clear_cache(obj, False, "Checking if element lines are single words.")
+        tokens = list(filter(lambda x: x, re.split(r"[\s\ufffc]", string)))
 
         # Note: We cannot check for the editable-text interface, because Gecko
         # seems to be exposing that for non-editable things. Thanks Gecko.
-        rv = not state.contains(pyatspi.STATE_EDITABLE) and len(tokens) > 1
+        rv = len(tokens) > 1 \
+            and not (AXUtilities.is_editable(obj) or AXUtilities.is_text_input(obj))
         if rv:
-            boundary = pyatspi.TEXT_BOUNDARY_LINE_START
             i = 0
             while i < nChars:
-                string, start, end = text.getTextAtOffset(i, boundary)
+                string, start, end = AXText.get_line_at_offset(obj, i)
                 if len(string.split()) != 1:
                     rv = False
                     break
@@ -3174,16 +2192,11 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        text = self.queryNonEmptyText(obj)
-        if not text:
-            return False
-
-        try:
-            nChars = text.characterCount
-        except:
-            return False
-
+        nChars = AXText.get_character_count(obj)
         if not nChars:
+            return False
+
+        if not self.treatAsTextObject(obj):
             return False
 
         # If we have a series of embedded object characters, there's a reasonable chance
@@ -3192,34 +2205,46 @@ class Utilities(script_utilities.Utilities):
         # CSSified text we're trying to detect can have embedded object characters. So
         # if we have more than 30% EOCs, don't use this workaround. (The 30% is based on
         # testing with problematic text.)
-        eocs = re.findall(self.EMBEDDED_OBJECT_CHARACTER, text.getText(0, -1))
+        string = AXText.get_all_text(obj)
+        eocs = re.findall("\ufffc", string)
         if len(eocs)/nChars > 0.3:
             return False
 
-        try:
-            obj.clearCache()
-            state = obj.getState()
-        except:
-            msg = "ERROR: Exception getting state for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
+        # TODO - JD: Can we remove this?
+        AXObject.clear_cache(obj, False, "Checking if element lines are single chars.")
 
         # Note: We cannot check for the editable-text interface, because Gecko
         # seems to be exposing that for non-editable things. Thanks Gecko.
-        rv = not state.contains(pyatspi.STATE_EDITABLE)
+        rv = not (AXUtilities.is_editable(obj) or AXUtilities.is_text_input(obj))
         if rv:
-            boundary = pyatspi.TEXT_BOUNDARY_LINE_START
             for i in range(nChars):
-                char = text.getText(i, i + 1)
+                char = AXText.get_character_at_offset(obj, i)[0]
                 if char.isspace() or char in ["\ufffc", "\ufffd"]:
                     continue
 
-                string, start, end = text.getTextAtOffset(i, boundary)
+                string = AXText.get_line_at_offset(obj, i)[0]
                 if len(string.strip()) > 1:
                     rv = False
                     break
 
         self._elementLinesAreSingleChars[hash(obj)] = rv
+        return rv
+
+    def labelIsAncestorOfLabelled(self, obj):
+        if not (obj and self.inDocumentContent(obj)):
+            return False
+
+        rv = self._labelIsAncestorOfLabelled.get(hash(obj))
+        if rv is not None:
+            return rv
+
+        rv = False
+        for target in AXUtilities.get_is_label_for(obj):
+            if AXObject.find_ancestor(target, lambda x: x == obj):
+                rv = True
+                break
+
+        self._labelIsAncestorOfLabelled[hash(obj)] = rv
         return rv
 
     def isOffScreenLabel(self, obj):
@@ -3230,139 +2255,46 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
+        if self.labelIsAncestorOfLabelled(obj):
+            return False
+
         rv = False
-        targets = self.labelTargets(obj)
+        targets = AXUtilities.get_is_label_for(obj)
         if targets:
-            try:
-                text = obj.queryText()
-                end = text.characterCount
-            except:
-                end = 1
-            x, y, width, height = self.getExtents(obj, 0, end)
-            if x < 0 or y < 0:
+            end = max(1, AXText.get_character_count(obj))
+            rect = AXText.get_range_rect(obj, 0, end)
+            if rect.x < 0 or rect.y < 0:
                 rv = True
 
         self._isOffScreenLabel[hash(obj)] = rv
         return rv
 
     def isDetachedDocument(self, obj):
-        docRoles = [pyatspi.ROLE_DOCUMENT_FRAME, pyatspi.ROLE_DOCUMENT_WEB]
-        if (obj and obj.getRole() in docRoles):
-            if obj.parent is None or self.isZombie(obj.parent):
-                msg = "WEB: %s is a detached document" % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
-                return True
+        if AXUtilities.is_document(obj) and not AXObject.is_valid(AXObject.get_parent(obj)):
+            tokens = ["WEB:", obj, "is a detached document"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return True
 
         return False
 
     def iframeForDetachedDocument(self, obj, root=None):
         root = root or self.documentFrame()
-        isIframe = lambda x: x and x.getRole() == pyatspi.ROLE_INTERNAL_FRAME
-        iframes = self.findAllDescendants(root, isIframe)
-        for iframe in iframes:
-            if obj in iframe:
-                # We won't change behavior, but we do want to log all bogosity.
-                self._isBrokenChildParentTree(obj, iframe)
-
-                msg = "WEB: Returning %s as iframe parent of detached %s" % (iframe, obj)
-                debug.println(debug.LEVEL_INFO, msg, True)
+        for iframe in AXUtilities.find_all_internal_frames(root):
+            if AXObject.get_parent(obj) == iframe:
+                tokens = ["WEB: Returning", iframe, "as iframe parent of detached", obj]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 return iframe
 
         return None
-
-    def _objectBoundsMightBeBogus(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super()._objectBoundsMightBeBogus(obj)
-
-        if obj.getRole() != pyatspi.ROLE_LINK or "Text" not in pyatspi.listInterfaces(obj):
-            return False
-
-        text = obj.queryText()
-        start = list(text.getRangeExtents(0, 1, 0))
-        end = list(text.getRangeExtents(text.characterCount - 1, text.characterCount, 0))
-        if self.extentsAreOnSameLine(start, end):
-            return False
-
-        if not self.hasPresentableText(obj.parent):
-            return False
-
-        msg = "WEB: Objects bounds of %s might be bogus" % obj
-        debug.println(debug.LEVEL_INFO, msg, True)
-        return True
-
-    def _isBrokenChildParentTree(self, child, parent):
-        if not (child and parent):
-            return False
-
-        try:
-            childIsChildOfParent = child in parent
-        except:
-            msg = "WEB: Exception checking if %s is in %s" % (child, parent)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            childIsChildOfParent = False
-        else:
-            msg = "WEB: %s is child of %s: %s" % (child, parent, childIsChildOfParent)
-            debug.println(debug.LEVEL_INFO, msg, True)
-
-        try:
-            parentIsParentOfChild = child.parent == parent
-        except:
-            msg = "WEB: Exception getting parent of %s" % child
-            debug.println(debug.LEVEL_INFO, msg, True)
-            parentIsParentOfChild = False
-        else:
-            msg = "WEB: %s is parent of %s: %s" % (parent, child, parentIsParentOfChild)
-            debug.println(debug.LEVEL_INFO, msg, True)
-
-        if parentIsParentOfChild != childIsChildOfParent:
-            msg = "FAIL: The above is broken and likely needs to be fixed by the toolkit."
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return True
-
-        return False
-
-    def targetsForLabel(self, obj):
-        isLabel = lambda r: r.getRelationType() == pyatspi.RELATION_LABEL_FOR
-        try:
-            relations = list(filter(isLabel, obj.getRelationSet()))
-        except:
-            msg = "WEB: Exception getting relations of %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return []
-
-        if not relations:
-            return []
-
-        r = relations[0]
-        rv = set([r.getTarget(i) for i in range(r.getNTargets())])
-
-        if obj in rv:
-            msg = 'WARNING: %s claims to be a label for itself' % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            rv.remove(obj)
-
-        return list(filter(lambda x: x is not None, rv))
-
-    def labelTargets(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return []
-
-        rv = self._labelTargets.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        rv = [hash(t) for t in self.targetsForLabel(obj)]
-        self._labelTargets[hash(obj)] = rv
-        return rv
 
     def isLinkAncestorOfImageInContents(self, link, contents):
         if not self.isLink(link):
             return False
 
         for obj, start, end, string in contents:
-            if obj.getRole() != pyatspi.ROLE_IMAGE:
+            if not AXUtilities.is_image(obj):
                 continue
-            if pyatspi.findAncestor(obj, lambda x: x == link):
+            if AXObject.find_ancestor(obj, lambda x: x == link):
                 return True
 
         return False
@@ -3381,12 +2313,8 @@ class Utilities(script_utilities.Utilities):
         return None
 
     def isLabellingInteractiveElement(self, obj):
-        if self._labelTargets.get(hash(obj)) == []:
-            return False
-
-        targets = self.targetsForLabel(obj)
-        for target in targets:
-            if target.getState().contains(pyatspi.STATE_FOCUSABLE):
+        for target in AXUtilities.get_is_label_for(obj):
+            if AXUtilities.is_focusable(target):
                 return True
 
         return False
@@ -3395,12 +2323,12 @@ class Utilities(script_utilities.Utilities):
         if self.isFocusModeWidget(obj):
             return False
 
-        targets = self.labelTargets(obj)
+        targets = AXUtilities.get_is_label_for(obj)
         if not contents:
             return bool(targets) or self.isLabelDescendant(obj)
 
         for acc, start, end, string in contents:
-            if hash(acc) in targets:
+            if acc in targets:
                 return True
 
         if not self.isTextBlockElement(obj):
@@ -3413,71 +2341,29 @@ class Utilities(script_utilities.Utilities):
             if not self.isLabelDescendant(acc) or self.isTextBlockElement(acc):
                 continue
 
-            ancestor = self.commonAncestor(acc, obj)
-            if ancestor and ancestor.getRole() in [pyatspi.ROLE_LABEL, pyatspi.ROLE_CAPTION]:
+            if AXUtilities.is_label_or_caption(AXObject.get_common_ancestor(acc, obj)):
                 return True
 
         return False
 
     def isAnchor(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return False
-
-        rv = self._isAnchor.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        rv = False
-        if obj.getRole() == pyatspi.ROLE_LINK \
-           and not obj.getState().contains(pyatspi.STATE_FOCUSABLE) \
-           and not 'jump' in self._getActionNames(obj) \
-           and not self._getXMLRoles(obj):
-            rv = True
-
-        self._isAnchor[hash(obj)] = rv
-        return rv
+        return AXUtilities.is_link(obj) and not AXUtilities.is_focusable(obj) \
+           and not AXObject.has_action(obj, "jump") and not AXUtilities.has_role_from_aria(obj)
 
     def isEmptyAnchor(self, obj):
-        if not self.isAnchor(obj):
-            return False
-
-        return self.queryNonEmptyText(obj) is None
+        return self.isAnchor(obj) and not self.treatAsTextObject(obj)
 
     def isEmptyToolTip(self, obj):
-        return obj and obj.getRole() == pyatspi.ROLE_TOOL_TIP \
-            and self.queryNonEmptyText(obj) is None
+        return AXUtilities.is_tool_tip(obj) and not self.treatAsTextObject(obj)
 
     def isBrowserUIAlert(self, obj):
-        if not (obj and obj.getRole() == pyatspi.ROLE_ALERT):
+        if not AXUtilities.is_alert(obj):
             return False
 
         if self.inDocumentContent(obj):
             return False
 
         return True
-
-    def isTopLevelBrowserUIAlert(self, obj):
-        if not self.isBrowserUIAlert(obj):
-            return False
-
-        parent = obj.parent
-        while parent and self.isLayoutOnly(parent):
-            parent = parent.parent
-
-        return parent.getRole() == pyatspi.ROLE_FRAME
-
-    def _getActionNames(self, obj):
-        try:
-            action = obj.queryAction()
-            names = [action.getName(i).lower() for i in range(action.nActions)]
-        except NotImplementedError:
-            return []
-        except:
-            msg = "WEB: Exception getting actions for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return []
-
-        return list(filter(lambda x: x, names))
 
     def isClickableElement(self, obj):
         if not (obj and self.inDocumentContent(obj)):
@@ -3487,16 +2373,29 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        rv = False
-        if not obj.getState().contains(pyatspi.STATE_FOCUSABLE) \
-           and not self.isFocusModeWidget(obj):
-            names = self._getActionNames(obj)
-            rv = "click" in names
+        if self.labelIsAncestorOfLabelled(obj):
+            return False
 
-        if rv and not obj.name and "Text" in pyatspi.listInterfaces(obj):
-            string = obj.queryText().getText(0, -1)
-            if not string.strip():
-                rv = obj.getRole() not in [pyatspi.ROLE_STATIC, pyatspi.ROLE_LINK]
+        if self.hasGridDescendant(obj):
+            tokens = ["WEB:", obj, "is not clickable: has grid descendant"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return False
+
+        rv = False
+        if not self.isFocusModeWidget(obj):
+            if not AXUtilities.is_focusable(obj):
+                rv = AXObject.has_action(obj, "click")
+            else:
+                rv = AXObject.has_action(obj, "click-ancestor")
+
+        if rv and not AXObject.get_name(obj) and AXObject.supports_text(obj):
+            text = AXText.get_all_text(obj)
+            if not text.replace("\ufffc", ""):
+                tokens = ["WEB:", obj, "is not clickable: its text is just EOCs"]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+                rv = False
+            elif not text.strip():
+                rv = not (AXUtilities.is_static(obj) or AXUtilities.is_link(obj))
 
         self._isClickableElement[hash(obj)] = rv
         return rv
@@ -3509,229 +2408,44 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        rv = pyatspi.findAncestor(obj, self.isCode) is not None
+        rv = AXObject.find_ancestor(obj, AXUtilities.is_code) is not None
         self._isCodeDescendant[hash(obj)] = rv
         return rv
 
-    def isCode(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().isCode(obj)
-
-        return self._getTag(obj) == "code" or "code" in self._getXMLRoles(obj)
-
-    def getComboBoxValue(self, obj):
-        attrs = self.objectAttributes(obj, False)
-        return attrs.get("valuetext", super().getComboBoxValue(obj))
-
-    def isEditableComboBox(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().isEditableComboBox(obj)
-
-        rv = self._isEditableComboBox.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        try:
-            role = obj.getRole()
-            state = obj.getState()
-        except:
-            msg = "ERROR: Exception getting role and state for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+    def isItemForEditableComboBox(self, item, comboBox):
+        if not (AXUtilities.is_list_item(item) or AXUtilities.is_menu_item(item)):
             return False
-
-        rv = False
-        if role == pyatspi.ROLE_COMBO_BOX:
-            rv = state.contains(pyatspi.STATE_EDITABLE)
-
-        self._isEditableComboBox[hash(obj)] = rv
-        return rv
-
-    def isDPub(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
+        if not AXUtilities.is_editable_combo_box(comboBox):
             return False
+        if AXObject.is_ancestor(item, comboBox):
+            return True
 
-        roles = self._getXMLRoles(obj)
-        rv = bool(list(filter(lambda x: x.startswith("doc-"), roles)))
-        return rv
-
-    def isDPubAbstract(self, obj):
-        return 'doc-abstract' in self._getXMLRoles(obj)
-
-    def isDPubAcknowledgments(self, obj):
-        return 'doc-acknowledgments' in self._getXMLRoles(obj)
-
-    def isDPubAfterword(self, obj):
-        return 'doc-afterword' in self._getXMLRoles(obj)
-
-    def isDPubAppendix(self, obj):
-        return 'doc-appendix' in self._getXMLRoles(obj)
-
-    def isDPubBacklink(self, obj):
-        return 'doc-backlink' in self._getXMLRoles(obj)
-
-    def isDPubBiblioref(self, obj):
-        return 'doc-biblioref' in self._getXMLRoles(obj)
-
-    def isDPubBibliography(self, obj):
-        return 'doc-bibliography' in self._getXMLRoles(obj)
-
-    def isDPubChapter(self, obj):
-        return 'doc-chapter' in self._getXMLRoles(obj)
-
-    def isDPubColophon(self, obj):
-        return 'doc-colophon' in self._getXMLRoles(obj)
-
-    def isDPubConclusion(self, obj):
-        return 'doc-conclusion' in self._getXMLRoles(obj)
-
-    def isDPubCover(self, obj):
-        return 'doc-cover' in self._getXMLRoles(obj)
-
-    def isDPubCredit(self, obj):
-        return 'doc-credit' in self._getXMLRoles(obj)
-
-    def isDPubCredits(self, obj):
-        return 'doc-credits' in self._getXMLRoles(obj)
-
-    def isDPubDedication(self, obj):
-        return 'doc-dedication' in self._getXMLRoles(obj)
-
-    def isDPubEndnote(self, obj):
-        return 'doc-endnote' in self._getXMLRoles(obj)
-
-    def isDPubEndnotes(self, obj):
-        return 'doc-endnotes' in self._getXMLRoles(obj)
-
-    def isDPubEpigraph(self, obj):
-        return 'doc-epigraph' in self._getXMLRoles(obj)
-
-    def isDPubEpilogue(self, obj):
-        return 'doc-epilogue' in self._getXMLRoles(obj)
-
-    def isDPubErrata(self, obj):
-        return 'doc-errata' in self._getXMLRoles(obj)
-
-    def isDPubExample(self, obj):
-        return 'doc-example' in self._getXMLRoles(obj)
-
-    def isDPubFootnote(self, obj):
-        return 'doc-footnote' in self._getXMLRoles(obj)
-
-    def isDPubForeword(self, obj):
-        return 'doc-foreword' in self._getXMLRoles(obj)
-
-    def isDPubGlossary(self, obj):
-        return 'doc-glossary' in self._getXMLRoles(obj)
-
-    def isDPubGlossref(self, obj):
-        return 'doc-glossref' in self._getXMLRoles(obj)
-
-    def isDPubIndex(self, obj):
-        return 'doc-index' in self._getXMLRoles(obj)
-
-    def isDPubIntroduction(self, obj):
-        return 'doc-introduction' in self._getXMLRoles(obj)
-
-    def isDPubNoteref(self, obj):
-        return 'doc-noteref' in self._getXMLRoles(obj)
-
-    def isDPubPagelist(self, obj):
-        return 'doc-pagelist' in self._getXMLRoles(obj)
-
-    def isDPubPagebreak(self, obj):
-        return 'doc-pagebreak' in self._getXMLRoles(obj)
-
-    def isDPubPart(self, obj):
-        return 'doc-part' in self._getXMLRoles(obj)
-
-    def isDPubPreface(self, obj):
-        return 'doc-preface' in self._getXMLRoles(obj)
-
-    def isDPubPrologue(self, obj):
-        return 'doc-prologue' in self._getXMLRoles(obj)
-
-    def isDPubPullquote(self, obj):
-        return 'doc-pullquote' in self._getXMLRoles(obj)
-
-    def isDPubQna(self, obj):
-        return 'doc-qna' in self._getXMLRoles(obj)
-
-    def isDPubSubtitle(self, obj):
-        return 'doc-subtitle' in self._getXMLRoles(obj)
-
-    def isDPubToc(self, obj):
-        return 'doc-toc' in self._getXMLRoles(obj)
-
-    def isErrorMessage(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().isErrorMessage(obj)
-
-        rv = self._isErrorMessage.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        try:
-            relations = obj.getRelationSet()
-        except:
-            msg = 'ERROR: Exception getting relationset for %s' % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        # Remove this when we bump dependencies to 2.26
-        try:
-            relationType = pyatspi.RELATION_ERROR_FOR
-        except:
-            rv = False
-        else:
-            isMessage = lambda r: r.getRelationType() == relationType
-            rv = bool(list(filter(isMessage, relations)))
-
-        self._isErrorMessage[hash(obj)] = rv
-        return rv
+        container = AXObject.find_ancestor(
+            item, lambda x: AXUtilities.is_list_box(x) or AXUtilities.is_combo_box(x))
+        targets = AXUtilities.get_is_controlled_by(container)
+        return comboBox in targets
 
     def isFakePlaceholderForEntry(self, obj):
-        if not (obj and self.inDocumentContent(obj) and obj.parent):
+        if not (obj and self.inDocumentContent(obj) and AXObject.get_parent(obj)):
             return False
 
-        entry = pyatspi.findAncestor(obj, lambda x: x and x.getRole() == pyatspi.ROLE_ENTRY)
-        if not (entry and entry.name):
+        if AXUtilities.is_editable(obj):
+            return False
+
+        entryName = AXObject.get_name(AXObject.find_ancestor(obj, AXUtilities.is_entry))
+        if not entryName:
             return False
 
         def _isMatch(x):
-            try:
-                role = x.getRole()
-                string = x.queryText().getText(0, -1).strip()
-            except:
+            string = AXText.get_all_text(x).strip()
+            if entryName != string:
                 return False
-            return role in [pyatspi.ROLE_SECTION, pyatspi.ROLE_STATIC] and entry.name == string
+            return AXUtilities.is_section(x) or AXUtilities.is_static(x)
 
         if _isMatch(obj):
             return True
 
-        return pyatspi.findDescendant(obj, _isMatch) is not None
-
-    def isGrid(self, obj):
-        return 'grid' in self._getXMLRoles(obj)
-
-    def isGridCell(self, obj):
-        return 'gridcell' in self._getXMLRoles(obj)
-
-    def isInlineListItem(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return False
-
-        rv = self._isInlineListItem.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        if obj.getRole() != pyatspi.ROLE_LIST_ITEM:
-            rv = False
-        else:
-            displayStyle = self._getDisplayStyle(obj)
-            rv = displayStyle and "inline" in displayStyle
-
-        self._isInlineListItem[hash(obj)] = rv
-        return rv
+        return AXObject.find_descendant(obj, _isMatch) is not None
 
     def isBlockListDescendant(self, obj):
         if not self.isListDescendant(obj):
@@ -3747,10 +2461,8 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        isList = lambda x: x and x.getRole() == pyatspi.ROLE_LIST
-        ancestor = pyatspi.findAncestor(obj, isList)
+        ancestor = AXObject.find_ancestor(obj, AXUtilities.is_list)
         rv = ancestor is not None
-
         self._isListDescendant[hash(obj)] = rv
         return rv
 
@@ -3762,10 +2474,10 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        if self.isInlineListItem(obj):
+        if AXUtilities.is_inline_list_item(obj):
             rv = True
         else:
-            ancestor = pyatspi.findAncestor(obj, self.isInlineListItem)
+            ancestor = AXObject.find_ancestor(obj, AXUtilities.is_inline_list_item)
             rv = ancestor is not None
 
         self._isInlineListDescendant[hash(obj)] = rv
@@ -3775,68 +2487,7 @@ class Utilities(script_utilities.Utilities):
         if not self.isInlineListDescendant(obj):
             return None
 
-        isList = lambda x: x and x.getRole() == pyatspi.ROLE_LIST
-        return pyatspi.findAncestor(obj, isList)
-
-    def isFeed(self, obj):
-        return 'feed' in self._getXMLRoles(obj)
-
-    def isFigure(self, obj):
-        return 'figure' in self._getXMLRoles(obj) or self._getTag(obj) == 'figure'
-
-    def isLandmark(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return False
-
-        rv = self._isLandmark.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        if obj.getRole() == pyatspi.ROLE_LANDMARK:
-            rv = True
-        elif self.isLandmarkRegion(obj):
-            rv = bool(obj.name)
-        else:
-            roles = self._getXMLRoles(obj)
-            rv = bool(list(filter(lambda x: x in self.getLandmarkTypes(), roles)))
-
-        self._isLandmark[hash(obj)] = rv
-        return rv
-
-    def isLandmarkWithoutType(self, obj):
-        roles = self._getXMLRoles(obj)
-        return not roles
-
-    def isLandmarkBanner(self, obj):
-        return 'banner' in self._getXMLRoles(obj)
-
-    def isLandmarkComplementary(self, obj):
-        return 'complementary' in self._getXMLRoles(obj)
-
-    def isLandmarkContentInfo(self, obj):
-        return 'contentinfo' in self._getXMLRoles(obj)
-
-    def isLandmarkForm(self, obj):
-        return 'form' in self._getXMLRoles(obj)
-
-    def isLandmarkMain(self, obj):
-        return 'main' in self._getXMLRoles(obj)
-
-    def isLandmarkNavigation(self, obj):
-        return 'navigation' in self._getXMLRoles(obj)
-
-    def isLandmarkRegion(self, obj):
-        return 'region' in self._getXMLRoles(obj)
-
-    def isLandmarkSearch(self, obj):
-        return 'search' in self._getXMLRoles(obj)
-
-    def isLiveRegion(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return False
-
-        attrs = self.objectAttributes(obj)
-        return 'container-live' in attrs
+        return AXObject.find_ancestor(obj, AXUtilities.is_list)
 
     def isLink(self, obj):
         if not obj:
@@ -3846,12 +2497,11 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        role = obj.getRole()
-        if role == pyatspi.ROLE_LINK and not self.isAnchor(obj):
+        if AXUtilities.is_link(obj) and not self.isAnchor(obj):
             rv = True
-        elif role == pyatspi.ROLE_STATIC \
-           and obj.parent.getRole() == pyatspi.ROLE_LINK \
-           and obj.name and obj.name == obj.parent.name:
+        elif AXUtilities.is_static(obj) \
+           and AXUtilities.is_link(AXObject.get_parent(obj)) \
+           and AXObject.has_same_non_empty_name(obj, AXObject.get_parent(obj)):
             rv = True
         else:
             rv = False
@@ -3867,32 +2517,20 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        rv = obj.getRole() == pyatspi.ROLE_TOOL_TIP \
-            and not obj.getState().contains(pyatspi.STATE_FOCUSABLE)
+        rv = AXUtilities.is_tool_tip(obj) \
+            and not AXUtilities.is_focusable(obj)
 
         self._isNonNavigablePopup[hash(obj)] = rv
         return rv
 
     def hasUselessCanvasDescendant(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
+        return len(AXUtilities.find_all_canvases(obj, self.isUselessImage)) > 0
+
+    def isTextSubscriptOrSuperscript(self, obj):
+        if AXUtilities.is_math_related(obj):
             return False
 
-        rv = self._hasUselessCanvasDescendant.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        isCanvas = lambda x: x and x.getRole() == pyatspi.ROLE_CANVAS
-        canvases = self.findAllDescendants(obj, isCanvas)
-        rv = len(list(filter(self.isUselessImage, canvases))) > 0
-
-        self._hasUselessCanvasDescendant[hash(obj)] = rv
-        return rv
-
-    def isSwitch(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().isSwitch(obj)
-
-        return 'switch' in self._getXMLRoles(obj)
+        return AXUtilities.is_subscript_or_superscript(obj)
 
     def isNonNavigableEmbeddedDocument(self, obj):
         rv = self._isNonNavigableEmbeddedDocument.get(hash(obj))
@@ -3902,8 +2540,8 @@ class Utilities(script_utilities.Utilities):
         rv = False
         if self.isDocument(obj) and self.getDocumentForObject(obj):
             try:
-                name = obj.name
-            except:
+                name = AXObject.get_name(obj)
+            except Exception:
                 rv = True
             else:
                 rv = "doubleclick" in name
@@ -3912,7 +2550,7 @@ class Utilities(script_utilities.Utilities):
         return rv
 
     def isRedundantSVG(self, obj):
-        if self._getTag(obj) != 'svg' or obj.parent.childCount == 1:
+        if not AXUtilities.is_svg(obj) or AXObject.get_child_count(AXObject.get_parent(obj)) == 1:
             return False
 
         rv = self._isRedundantSVG.get(hash(obj))
@@ -3920,15 +2558,39 @@ class Utilities(script_utilities.Utilities):
             return rv
 
         rv = False
-        children = [x for x in obj.parent if self._getTag(x) == 'svg']
-        if len(children) == obj.parent.childCount:
-            sortedChildren = sorted(children, key=functools.cmp_to_key(self.sizeComparison))
+        parent = AXObject.get_parent(obj)
+        children = [x for x in AXObject.iter_children(parent, AXUtilities.is_svg)]
+        if len(children) == AXObject.get_child_count(parent):
+            sortedChildren = AXComponent.sort_objects_by_size(children)
             if obj != sortedChildren[-1]:
-                objExtents = self.getExtents(obj, 0, -1)
-                largestExtents = self.getExtents(sortedChildren[-1], 0, -1)
-                rv = self.intersection(objExtents, largestExtents) == tuple(objExtents)
+                objExtents = AXComponent.get_rect(obj)
+                largestExtents = AXComponent.get_rect(sortedChildren[-1])
+                intersection = AXComponent.get_rect_intersection(objExtents, largestExtents)
+                rv = intersection == objExtents
 
         self._isRedundantSVG[hash(obj)] = rv
+        return rv
+
+    def isCustomImage(self, obj):
+        if not (obj and self.inDocumentContent(obj)):
+            return False
+
+        rv = self._isCustomImage.get(hash(obj))
+        if rv is not None:
+            return rv
+
+        rv = False
+        if AXUtilities.is_web_element_custom(obj) and AXUtilities.has_explicit_name(obj) \
+           and AXUtilities.is_section(obj) \
+           and AXObject.supports_text(obj) \
+           and not re.search(r'[^\s\ufffc]', AXText.get_all_text(obj)):
+            for child in AXObject.iter_children(obj):
+                if not (AXUtilities.is_image_or_canvas(child) or AXUtilities.is_svg(child)):
+                    break
+            else:
+                rv = True
+
+        self._isCustomImage[hash(obj)] = rv
         return rv
 
     def isUselessImage(self, obj):
@@ -3940,32 +2602,33 @@ class Utilities(script_utilities.Utilities):
             return rv
 
         rv = True
-        if obj.getRole() not in [pyatspi.ROLE_IMAGE, pyatspi.ROLE_CANVAS] \
-           and self._getTag(obj) != 'svg':
+        has_explicit_name = AXUtilities.has_explicit_name(obj)
+        if not (AXUtilities.is_image_or_canvas(obj) or AXUtilities.is_svg(obj)):
             rv = False
-        if rv and (obj.name or obj.description or self.hasLongDesc(obj)):
+        if rv and (AXObject.get_name(obj) \
+                   or AXObject.get_description(obj) \
+                   or self.hasLongDesc(obj)):
             rv = False
-        if rv and (self.isClickableElement(obj) and not self.hasExplicitName(obj)):
+        if rv and self.isClickableElement(obj) and not has_explicit_name:
             rv = False
-        if rv and obj.getState().contains(pyatspi.STATE_FOCUSABLE):
+        if rv and AXUtilities.is_focusable(obj):
             rv = False
-        if rv and obj.parent.getRole() == pyatspi.ROLE_LINK and not self.hasExplicitName(obj):
-            uri = self.uri(obj.parent)
+        if rv and AXUtilities.is_link(AXObject.get_parent(obj)) and not has_explicit_name:
+            uri = AXHypertext.get_link_uri(AXObject.get_parent(obj))
             if uri and not uri.startswith('javascript'):
                 rv = False
-        if rv and 'Image' in pyatspi.listInterfaces(obj):
-            image = obj.queryImage()
-            if image.imageDescription:
+        if rv and AXObject.supports_image(obj):
+            if AXObject.get_image_description(obj):
                 rv = False
-            elif not self.hasExplicitName(obj) and not self.isRedundantSVG(obj):
-                width, height = image.getImageSize()
+            elif not has_explicit_name and not self.isRedundantSVG(obj):
+                width, height = AXObject.get_image_size(obj)
                 if width > 25 and height > 25:
                     rv = False
-        if rv and 'Text' in pyatspi.listInterfaces(obj):
-            rv = self.queryNonEmptyText(obj) is None
-        if rv and obj.childCount:
-            for i in range(min(obj.childCount, 50)):
-                if not self.isUselessImage(obj[i]):
+        if rv and AXObject.supports_text(obj):
+            rv = not self.treatAsTextObject(obj)
+        if rv and AXObject.get_child_count(obj):
+            for i in range(min(AXObject.get_child_count(obj), 50)):
+                if not self.isUselessImage(AXObject.get_child(obj, i)):
                     rv = False
                     break
 
@@ -3973,21 +2636,22 @@ class Utilities(script_utilities.Utilities):
         return rv
 
     def hasValidName(self, obj):
-        if not (obj and obj.name):
+        name = AXObject.get_name(obj)
+        if not name:
             return False
 
-        if len(obj.name.split()) > 1:
+        if len(name.split()) > 1:
             return True
 
-        parsed = urllib.parse.parse_qs(obj.name)
+        parsed = urllib.parse.parse_qs(name)
         if len(parsed) > 2:
-            msg = "WEB: name of %s is suspected query string" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: name of", obj, "is suspected query string"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return False
 
-        if len(obj.name) == 1 and ord(obj.name) in range(0xe000, 0xf8ff):
-            msg = "WEB: name of %s is in unicode private use area" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if len(name) == 1 and ord(name) in range(0xe000, 0xf8ff):
+            tokens = ["WEB: name of", obj, "is in unicode private use area"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return False
 
         return True
@@ -4000,68 +2664,32 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        try:
-            role = obj.getRole()
-            state = obj.getState()
-            interfaces = pyatspi.listInterfaces(obj)
-        except:
-            msg = "WEB: Exception getting role, state, and interfaces for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        roles = [pyatspi.ROLE_PARAGRAPH,
-                 pyatspi.ROLE_SECTION,
-                 pyatspi.ROLE_STATIC,
-                 pyatspi.ROLE_TABLE_ROW]
-
-        if role not in roles and not self.isAriaAlert(obj):
+        roles = [Atspi.Role.PARAGRAPH,
+                 Atspi.Role.SECTION,
+                 Atspi.Role.STATIC,
+                 Atspi.Role.TABLE_ROW]
+        role = AXObject.get_role(obj)
+        if role not in roles and not AXUtilities.is_aria_alert(obj):
             rv = False
-        elif state.contains(pyatspi.STATE_FOCUSABLE) or state.contains(pyatspi.STATE_FOCUSED):
+        elif AXUtilities.is_focusable(obj):
             rv = False
-        elif state.contains(pyatspi.STATE_EDITABLE):
+        elif AXUtilities.is_editable(obj):
             rv = False
-        elif self.hasValidName(obj) or obj.description or obj.childCount:
+        elif self.hasValidName(obj) \
+                or AXObject.get_description(obj) or AXObject.get_child_count(obj):
             rv = False
-        elif "Text" in interfaces and obj.queryText().characterCount \
-             and obj.queryText().getText(0, -1) != obj.name:
+        elif AXText.get_character_count(obj) and AXText.get_all_text(obj) != AXObject.get_name(obj):
             rv = False
-        elif "Action" in interfaces and self._getActionNames(obj):
-            rv = False
+        elif AXObject.supports_action(obj):
+            names = AXObject.get_action_names(obj)
+            ignore = ["click-ancestor", "show-context-menu", "do-default"]
+            names = list(filter(lambda x: x not in ignore, names))
+            rv = not names
         else:
             rv = True
 
         self._isUselessEmptyElement[hash(obj)] = rv
         return rv
-
-    def isParentOfNullChild(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return False
-
-        rv = self._isParentOfNullChild.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        rv = False
-        try:
-            childCount = obj.childCount
-        except:
-            msg = "WEB: Exception getting childCount for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            childCount = 0
-        if childCount and obj[0] is None:
-            msg = "ERROR: %s reports %i children, but obj[0] is None" % (obj, childCount)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            rv = True
-
-        self._isParentOfNullChild[hash(obj)] = rv
-        return rv
-
-    def hasExplicitName(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return False
-
-        attrs = self.objectAttributes(obj)
-        return attrs.get('explicit-name') == 'true'
 
     def hasLongDesc(self, obj):
         if not (obj and self.inDocumentContent(obj)):
@@ -4071,9 +2699,7 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        names = self._getActionNames(obj)
-        rv = "showlongdesc" in names
-
+        rv = AXObject.has_action(obj, "showlongdesc")
         self._hasLongDesc[hash(obj)] = rv
         return rv
 
@@ -4081,113 +2707,22 @@ class Utilities(script_utilities.Utilities):
         if not (obj and self.inDocumentContent(obj)):
             return super().hasVisibleCaption(obj)
 
-        if not (self.isFigure(obj) or "Table" in pyatspi.listInterfaces(obj)):
+        if not (AXUtilities.is_figure(obj) or AXObject.supports_table(obj)):
             return False
 
         rv = self._hasVisibleCaption.get(hash(obj))
         if rv is not None:
             return rv
 
-        labels = self.labelsForObject(obj)
-        pred = lambda x: x and x.getRole() == pyatspi.ROLE_CAPTION and self.isShowingAndVisible(x)
-        rv = bool(list(filter(pred, labels)))
+        labels = AXUtilities.get_is_labelled_by(obj)
+
+        def isVisibleCaption(x):
+            return AXUtilities.is_caption(x) \
+                and AXUtilities.is_showing(x) and AXUtilities.is_visible(x)
+
+        rv = bool(list(filter(isVisibleCaption, labels)))
         self._hasVisibleCaption[hash(obj)] = rv
         return rv
-
-    def hasDetails(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().hasDetails(obj)
-
-        rv = self._hasDetails.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        try:
-            relations = obj.getRelationSet()
-        except:
-            msg = 'ERROR: Exception getting relationset for %s' % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        rv = False
-        relation = filter(lambda x: x.getRelationType() == pyatspi.RELATION_DETAILS, relations)
-        for r in relation:
-            if r.getNTargets() > 0:
-                rv = True
-                break
-
-        self._hasDetails[hash(obj)] = rv
-        return rv
-
-    def detailsIn(self, obj):
-        if not self.hasDetails(obj):
-            return []
-
-        try:
-            relations = obj.getRelationSet()
-        except:
-            msg = 'ERROR: Exception getting relationset for %s' % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return []
-
-        rv = []
-        relation = filter(lambda x: x.getRelationType() == pyatspi.RELATION_DETAILS, relations)
-        for r in relation:
-            for i in range(r.getNTargets()):
-                rv.append(r.getTarget(i))
-
-        return rv
-
-    def isDetails(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().isDetails(obj)
-
-        rv = self._isDetails.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        try:
-            relations = obj.getRelationSet()
-        except:
-            msg = 'ERROR: Exception getting relationset for %s' % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        rv = False
-        relation = filter(lambda x: x.getRelationType() == pyatspi.RELATION_DETAILS_FOR, relations)
-        for r in relation:
-            if r.getNTargets() > 0:
-                rv = True
-                break
-
-        self._isDetails[hash(obj)] = rv
-        return rv
-
-    def detailsFor(self, obj):
-        if not self.isDetails(obj):
-            return []
-
-        try:
-            relations = obj.getRelationSet()
-        except:
-            msg = 'ERROR: Exception getting relationset for %s' % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return []
-
-        rv = []
-        relation = filter(lambda x: x.getRelationType() == pyatspi.RELATION_DETAILS_FOR, relations)
-        for r in relation:
-            for i in range(r.getNTargets()):
-                rv.append(r.getTarget(i))
-
-        return rv
-
-    def popupType(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return 'false'
-
-        attrs = self.objectAttributes(obj)
-        return attrs.get('haspopup', 'false').lower()
 
     def inferLabelFor(self, obj):
         if not self.shouldInferLabelFor(obj):
@@ -4197,7 +2732,7 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        rv = self._script.labelInference.infer(obj, False)
+        rv = self._script.label_inference.infer(obj, False)
         self._inferredLabels[hash(obj)] = rv
         return rv
 
@@ -4206,77 +2741,42 @@ class Utilities(script_utilities.Utilities):
             return False
 
         rv = self._shouldInferLabelFor.get(hash(obj))
-        if rv and not self._script._lastCommandWasCaretNav:
+        if rv and not self._script.caret_navigation.last_input_event_was_navigation_command():
             return not self._script.inSayAll()
-        if rv == False:
+        if rv is False:
             return rv
 
-        try:
-            role = obj.getRole()
-            name = obj.name
-        except:
-            msg = "WEB: Exception getting role and name for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+        role = AXObject.get_role(obj)
+        name = AXObject.get_name(obj)
+        if name:
             rv = False
-        else:
-            if name:
-                rv = False
-            elif not rv:
-                roles =  [pyatspi.ROLE_CHECK_BOX,
-                          pyatspi.ROLE_COMBO_BOX,
-                          pyatspi.ROLE_ENTRY,
-                          pyatspi.ROLE_LIST_BOX,
-                          pyatspi.ROLE_PASSWORD_TEXT,
-                          pyatspi.ROLE_RADIO_BUTTON]
-                rv = role in roles and not self.displayedLabel(obj)
+        elif AXUtilities.has_role_from_aria(obj):
+            rv = False
+        elif not rv:
+            roles = [Atspi.Role.CHECK_BOX,
+                     Atspi.Role.COMBO_BOX,
+                     Atspi.Role.ENTRY,
+                     Atspi.Role.LIST_BOX,
+                     Atspi.Role.PASSWORD_TEXT,
+                     Atspi.Role.RADIO_BUTTON]
+            rv = role in roles and not AXUtilities.get_displayed_label(obj)
 
         self._shouldInferLabelFor[hash(obj)] = rv
 
-        # TODO - JD: This is private.
-        if self._script._lastCommandWasCaretNav \
-           and role not in [pyatspi.ROLE_RADIO_BUTTON, pyatspi.ROLE_CHECK_BOX]:
+        if self._script.caret_navigation.last_input_event_was_navigation_command() \
+           and role not in [Atspi.Role.RADIO_BUTTON, Atspi.Role.CHECK_BOX]:
             return False
 
-        return rv
-
-    def displayedLabel(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().displayedLabel(obj)
-
-        rv = self._displayedLabelText.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        labels = self.labelsForObject(obj)
-        strings = [l.name or self.displayedText(l) for l in labels if l is not None]
-        rv = " ".join(strings)
-
-        self._displayedLabelText[hash(obj)] = rv
-        return rv
-
-    def labelsForObject(self, obj):
-        if not obj:
-            return []
-
-        rv = self._labelsForObject.get(hash(obj))
-        if rv is not None:
-            return rv
-
-        rv = super().labelsForObject(obj)
-        if not self.inDocumentContent(obj):
-            return rv
-
-        self._labelsForObject[hash(obj)] = rv
         return rv
 
     def isSpinnerEntry(self, obj):
         if not self.inDocumentContent(obj):
             return False
 
-        if not obj.getState().contains(pyatspi.STATE_EDITABLE):
+        if not AXUtilities.is_editable(obj):
             return False
 
-        if pyatspi.ROLE_SPIN_BUTTON in [obj.getRole(), obj.parent.getRole()]:
+        if AXUtilities.is_spin_button(obj) or AXUtilities.is_spin_button(AXObject.get_parent(obj)):
             return True
 
         return False
@@ -4285,19 +2785,13 @@ class Utilities(script_utilities.Utilities):
         if not self.isSpinnerEntry(event.source):
             return False
 
-        if event.type.startswith("object:text-changed") \
-           or event.type.startswith("object:text-selection-changed"):
-            lastKey, mods = self.lastKeyAndModifiers()
-            if lastKey in ["Down", "Up"]:
-                return True
-
-        return False
+        return event.type.startswith("object:text-selection-changed") \
+            and input_event_manager.get_manager().last_event_was_up_or_down()
 
     def treatEventAsSpinnerValueChange(self, event):
         if event.type.startswith("object:text-caret-moved") and self.isSpinnerEntry(event.source):
-            lastKey, mods = self.lastKeyAndModifiers()
-            if lastKey in ["Down", "Up"]:
-                obj, offset = self.getCaretContext()
+            if input_event_manager.get_manager().last_event_was_up_or_down():
+                obj = self.getCaretContext()[0]
                 return event.source == obj
 
         return False
@@ -4306,20 +2800,10 @@ class Utilities(script_utilities.Utilities):
         if self.inDocumentContent(event.source):
             return False
 
-        try:
-            role = event.source.getRole()
-        except:
-            msg = "WEB: Exception getting role for %s" % event.source
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        eType = event.type
-        if eType.startswith("object:text-") and self.isSingleLineAutocompleteEntry(event.source):
-            lastKey, mods = self.lastKeyAndModifiers()
-            return lastKey == "Return"
-        if eType.startswith("object:text-") or eType.endswith("accessible-name"):
-            return role in [pyatspi.ROLE_STATUS_BAR, pyatspi.ROLE_LABEL]
-        if eType.startswith("object:children-changed"):
+        if event.type.endswith("accessible-name"):
+            return AXUtilities.is_status_bar(event.source) or AXUtilities.is_label(event.source) \
+                or AXUtilities.is_frame(event.source)
+        if event.type.startswith("object:children-changed"):
             return True
 
         return False
@@ -4329,19 +2813,23 @@ class Utilities(script_utilities.Utilities):
         if not inContent:
             return False
 
-        isListBoxItem = lambda x: x and x.parent and x.parent.getRole() == pyatspi.ROLE_LIST_BOX
-        isMenuItem = lambda x: x and x.parent and x.parent.getRole() == pyatspi.ROLE_MENU
-        isComboBoxItem = lambda x: x and x.parent and x.parent.getRole() == pyatspi.ROLE_COMBO_BOX
+        def isListBoxItem(x):
+            return AXUtilities.is_list_box(AXObject.get_parent(x))
 
-        if event.source.getState().contains(pyatspi.STATE_EDITABLE) \
+        def isMenuItem(x):
+            return AXUtilities.is_menu(AXObject.get_parent(x))
+
+        def isComboBoxItem(x):
+            return AXUtilities.is_combo_box(AXObject.get_parent(x))
+
+        if AXUtilities.is_editable(event.source) \
            and event.type.startswith("object:text-"):
             obj, offset = self.getCaretContext(documentFrame)
             if isListBoxItem(obj) or isMenuItem(obj):
                 return True
 
-            if obj == event.source and isComboBoxItem(obj):
-                lastKey, mods = self.lastKeyAndModifiers()
-                if lastKey in ["Down", "Up"]:
+            if obj == event.source and isComboBoxItem(obj) \
+               and input_event_manager.get_manager().last_event_was_up_or_down():
                     return True
 
         return False
@@ -4357,78 +2845,59 @@ class Utilities(script_utilities.Utilities):
 
     def _eventIsBrowserUIAutocompleteSelectionNoise(self, event):
         selection = ["object:selection-changed", "object:state-changed:selected"]
-        if not event.type in selection:
+        if event.type not in selection:
             return False
 
-        try:
-            focusRole = orca_state.locusOfFocus.getRole()
-            focusState = orca_state.locusOfFocus.getState()
-        except:
-            msg = "WEB: Exception getting role and state for %s" % orca_state.locusOfFocus
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if not AXUtilities.is_menu_related(event.source):
             return False
 
-        try:
-            role = event.source.getRole()
-        except:
-            msg = "WEB: Exception getting role for %s" % event.source
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        if role in [pyatspi.ROLE_MENU, pyatspi.ROLE_MENU_ITEM] \
-           and focusRole == pyatspi.ROLE_ENTRY \
-           and focusState.contains(pyatspi.STATE_FOCUSED):
-            lastKey, mods = self.lastKeyAndModifiers()
-            if lastKey not in ["Down", "Up"]:
+        focus = focus_manager.get_manager().get_locus_of_focus()
+        if AXUtilities.is_entry(focus) and AXUtilities.is_focused(focus):
+            if not input_event_manager.get_manager().last_event_was_up_or_down():
                 return True
 
         return False
 
     def _eventIsBrowserUIAutocompleteTextNoise(self, event):
         if not event.type.startswith("object:text-") \
-           or not orca_state.locusOfFocus \
-           or not self.isSingleLineAutocompleteEntry(event.source):
+           or not AXUtilities.is_single_line_autocomplete_entry(event.source):
             return False
 
-        roles = [pyatspi.ROLE_MENU_ITEM,
-                 pyatspi.ROLE_CHECK_MENU_ITEM,
-                 pyatspi.ROLE_RADIO_MENU_ITEM,
-                 pyatspi.ROLE_LIST_ITEM]
+        focus = focus_manager.get_manager().get_locus_of_focus()
+        if not AXUtilities.is_selectable(focus):
+            return False
 
-        if orca_state.locusOfFocus.getRole() in roles \
-           and orca_state.locusOfFocus.getState().contains(pyatspi.STATE_SELECTABLE):
-            lastKey, mods = self.lastKeyAndModifiers()
-            return lastKey in ["Down", "Up"]
+        if AXUtilities.is_menu_item_of_any_kind(focus) or AXUtilities.is_list_item(focus):
+            return input_event_manager.get_manager().last_event_was_up_or_down()
 
         return False
 
     def eventIsBrowserUIPageSwitch(self, event):
         selection = ["object:selection-changed", "object:state-changed:selected"]
-        if not event.type in selection:
+        if event.type not in selection:
             return False
 
-        roles = [pyatspi.ROLE_PAGE_TAB, pyatspi.ROLE_PAGE_TAB_LIST]
-        if not event.source.getRole() in roles:
+        if not AXUtilities.is_page_tab_list_related(event.source):
             return False
 
         if self.inDocumentContent(event.source):
             return False
 
-        if not self.inDocumentContent(orca_state.locusOfFocus):
+        if not self.inDocumentContent(focus_manager.get_manager().get_locus_of_focus()):
             return False
 
         return True
 
     def eventIsFromLocusOfFocusDocument(self, event):
-        if orca_state.locusOfFocus == orca_state.activeWindow:
+        if focus_manager.get_manager().focus_is_active_window():
             focus = self.activeDocument()
             source = self.getTopLevelDocumentForObject(event.source)
         else:
-            focus = self.getDocumentForObject(orca_state.locusOfFocus)
+            focus = self.getDocumentForObject(focus_manager.get_manager().get_locus_of_focus())
             source = self.getDocumentForObject(event.source)
 
-        msg = "WEB: Event doc: %s. Focus doc: %s." % (source, focus)
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: Event doc:", source, ". Focus doc:", focus, "."]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
         if not (source and focus):
             return False
@@ -4436,38 +2905,41 @@ class Utilities(script_utilities.Utilities):
         if source == focus:
             return True
 
-        if self.isZombie(focus) and not self.isZombie(source):
+        if not AXObject.is_valid(focus) and AXObject.is_valid(source):
             if self.activeDocument() == source:
                 msg = "WEB: Treating active doc as locusOfFocus doc"
-                debug.println(debug.LEVEL_INFO, msg, True)
+                debug.print_message(debug.LEVEL_INFO, msg, True)
                 return True
 
         return False
 
-    def textEventIsDueToDeletion(self, event):
-        if not self.inDocumentContent(event.source) \
-           or not event.source.getState().contains(pyatspi.STATE_EDITABLE):
+    def eventIsIrrelevantSelectionChangedEvent(self, event):
+        if event.type != "object:selection-changed":
             return False
 
-        if self.isDeleteCommandTextDeletionEvent(event) \
-           or self.isBackSpaceCommandTextDeletionEvent(event):
+        focus = focus_manager.get_manager().get_locus_of_focus()
+        if not focus:
+            msg = "WEB: Selection changed event is relevant (no locusOfFocus)"
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return False
+        if event.source == focus:
+            msg = "WEB: Selection changed event is relevant (is locusOfFocus)"
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return False
+        if AXObject.find_ancestor(focus, lambda x: x == event.source):
+            msg = "WEB: Selection changed event is relevant (ancestor of locusOfFocus)"
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return False
+
+        # There may be other roles where we need to do this. For now, solve the known one.
+        if AXUtilities.is_page_tab_list(event.source):
+            tokens = ["WEB: Selection changed event is irrelevant (unrelated",
+                      AXObject.get_role_name(event.source), ")"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return True
 
-        return False
-
-    def textEventIsDueToInsertion(self, event):
-        if not event.type.startswith("object:text-"):
-            return False
-
-        if not self.inDocumentContent(event.source) \
-           or not event.source.getState().contains(pyatspi.STATE_EDITABLE) \
-           or not event.source == orca_state.locusOfFocus:
-            return False
-
-        if isinstance(orca_state.lastInputEvent, input_event.KeyboardEvent):
-            inputEvent = orca_state.lastNonModifierKeyEvent
-            return inputEvent and inputEvent.isPrintableKey() and not inputEvent.modifiers
-
+        msg = "WEB: Selection changed event is relevant (no reason found to ignore it)"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
         return False
 
     def textEventIsForNonNavigableTextObject(self, event):
@@ -4476,61 +2948,48 @@ class Utilities(script_utilities.Utilities):
 
         return self._treatObjectAsWhole(event.source)
 
-    def eventIsEOCAdded(self, event):
-        if not self.inDocumentContent(event.source):
-            return False
-
-        if event.type.startswith("object:text-changed:insert") \
-           and self.EMBEDDED_OBJECT_CHARACTER in event.any_data:
-            return not re.match("[^\s\ufffc]", event.any_data)
-
-        return False
-
-    def caretMovedOutsideActiveGrid(self, event, oldFocus=None):
+    def caretMovedOutsideActiveGrid(self, event, old_focus=None):
         if not (event and event.type.startswith("object:text-caret-moved")):
             return False
 
-        oldFocus = oldFocus or orca_state.locusOfFocus
-        if not self.isGridDescendant(oldFocus):
+        old_focus = old_focus or focus_manager.get_manager().get_locus_of_focus()
+        if not self.isGridDescendant(old_focus):
             return False
 
         return not self.isGridDescendant(event.source)
 
-    def caretMovedToSamePageFragment(self, event, oldFocus=None):
+    def caretMovedToSamePageFragment(self, event, old_focus=None):
         if not (event and event.type.startswith("object:text-caret-moved")):
             return False
 
-        if event.source.getState().contains(pyatspi.STATE_EDITABLE):
+        if AXUtilities.is_editable(event.source):
             return False
 
-        docURI = self.documentFrameURI()
-        fragment = urllib.parse.urlparse(docURI).fragment
+        fragment = AXDocument.get_document_uri_fragment(self.documentFrame())
         if not fragment:
             return False
 
-        sourceID = self._getID(event.source)
+        sourceID = AXObject.get_attribute(event.source, "id")
         if sourceID and fragment == sourceID:
             return True
 
-        oldFocus = oldFocus or orca_state.locusOfFocus
-        if self.isLink(oldFocus):
-            link = oldFocus
+        old_focus = old_focus or focus_manager.get_manager().get_locus_of_focus()
+        if self.isLink(old_focus):
+            link = old_focus
         else:
-            link = pyatspi.findAncestor(oldFocus, self.isLink)
+            link = AXObject.find_ancestor(old_focus, self.isLink)
 
-        return link and self.uri(link) == docURI
+        return link and AXHypertext.get_link_uri(link) == AXDocument.get_uri(self.documentFrame())
 
     def isChildOfCurrentFragment(self, obj):
-        parseResult = urllib.parse.urlparse(self.documentFrameURI())
-        if not parseResult.fragment:
+        fragment = AXDocument.get_document_uri_fragment(self.documentFrame(obj))
+        if not fragment:
             return False
 
-        isSameFragment = lambda x: self._getID(x) == parseResult.fragment
-        return pyatspi.findAncestor(obj, isSameFragment) is not None
+        def isSameFragment(x):
+            return AXObject.get_attribute(x, "id") == fragment
 
-    def documentFragment(self, documentFrame):
-        parseResult = urllib.parse.urlparse(self.documentFrameURI(documentFrame))
-        return parseResult.fragment
+        return AXObject.find_ancestor(obj, isSameFragment) is not None
 
     def isContentEditableWithEmbeddedObjects(self, obj):
         if not (obj and self.inDocumentContent(obj)):
@@ -4541,22 +3000,15 @@ class Utilities(script_utilities.Utilities):
             return rv
 
         rv = False
-        try:
-            state = obj.getState()
-            role = obj.getRole()
-        except:
-            msg = "WEB: Exception getting state and role for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return rv
+        def hasTextBlockRole(x):
+            return AXObject.get_role(x) in self._textBlockElementRoles() \
+                and not self.isFakePlaceholderForEntry(x) and AXUtilities.is_web_element(x)
 
-        hasTextBlockRole = lambda x: x and x.getRole() in self._textBlockElementRoles() \
-            and not self.isFakePlaceholderForEntry(x) and not self.isStaticTextLeaf(x)
-
-        if self._getTag(obj) in ["input", "textarea"]:
+        if AXUtilities.is_text_input(obj):
             rv = False
-        elif role == pyatspi.ROLE_ENTRY and state.contains(pyatspi.STATE_MULTI_LINE):
-            rv = pyatspi.findDescendant(obj, hasTextBlockRole)
-        elif state.contains(pyatspi.STATE_EDITABLE):
+        elif AXUtilities.is_multi_line_entry(obj):
+            rv = AXObject.find_descendant(obj, hasTextBlockRole)
+        elif AXUtilities.is_editable(obj):
             rv = hasTextBlockRole(obj) or self.isLink(obj)
         elif not self.isDocument(obj):
             document = self.getDocumentForObject(obj)
@@ -4565,179 +3017,115 @@ class Utilities(script_utilities.Utilities):
         self._isContentEditableWithEmbeddedObjects[hash(obj)] = rv
         return rv
 
-    def characterOffsetInParent(self, obj):
-        start, end, length = self._rangeInParentWithLength(obj)
-        return start
-
     def _rangeInParentWithLength(self, obj):
-        if not obj:
+        parent = AXObject.get_parent(obj)
+        if not self.treatAsTextObject(parent):
             return -1, -1, 0
 
-        text = self.queryNonEmptyText(obj.parent)
-        if not text:
-            return -1, -1, 0
+        start = AXHypertext.get_link_start_offset(obj)
+        end = AXHypertext.get_link_end_offset(obj)
+        return start, end, AXText.get_character_count(parent)
 
-        start, end = self.getHyperlinkRange(obj)
-        return start, end, text.characterCount
-
-    def getError(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().getError(obj)
-
-        try:
-            state = obj.getState()
-        except:
-            msg = "ERROR: Exception getting state for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        if not state.contains(pyatspi.STATE_INVALID_ENTRY):
-            return False
-
-        try:
-            self._currentTextAttrs.pop(hash(obj))
-        except:
-            pass
-
-        attrs, start, end = self.textAttributes(obj, 0, True)
-        error = attrs.get("invalid")
-        if error == "false":
-            return False
-        if error not in ["spelling", "grammar"]:
-            return True
-
-        return error
-
-    def _getErrorMessageContainer(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return None
-
-        if not self.getError(obj):
-            return None
-
-        # Remove this when we bump dependencies to 2.26
-        try:
-            relationType = pyatspi.RELATION_ERROR_MESSAGE
-        except:
-            return None
-
-        isMessage = lambda r: r.getRelationType() == relationType
-        relations = list(filter(isMessage, obj.getRelationSet()))
-        if not relations:
-            return None
-
-        return relations[0].getTarget(0)
-
-    def getErrorMessage(self, obj):
-        return self.expandEOCs(self._getErrorMessageContainer(obj))
-
-    def isErrorForContents(self, obj, contents=[]):
-        if not self.isErrorMessage(obj):
-            return False
-
-        for acc, start, end, string in contents:
-            if self._getErrorMessageContainer(acc) == obj:
-                return True
-
-        return False
-
-    def hasNoSize(self, obj):
-        if not (obj and self.inDocumentContent(obj)):
-            return super().hasNoSize(obj)
-
-        rv = self._hasNoSize.get(hash(obj))
+    def _canHaveCaretContext(self, obj):
+        rv = self._canHaveCaretContextDecision.get(hash(obj))
         if rv is not None:
             return rv
 
-        rv = super().hasNoSize(obj)
-        self._hasNoSize[hash(obj)] = rv
+        if obj is None:
+            return False
+        if AXObject.is_dead(obj):
+            msg = "WEB: Dead object cannot have caret context"
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return False
+        if not AXObject.is_valid(obj):
+            tokens = ["WEB: Invalid object cannot have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return False
+        if not AXUtilities.is_web_element(obj):
+            tokens = ["WEB: Non-element cannot have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return False
+
+        start_time = time.time()
+        rv = None
+        if AXUtilities.is_focusable(obj):
+            tokens = ["WEB: Focusable object can have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = True
+        elif AXUtilities.is_editable(obj):
+            tokens = ["WEB: Editable object can have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = True
+        elif AXUtilities.is_landmark(obj):
+            tokens = ["WEB: Landmark can have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = True
+        elif self.isUselessEmptyElement(obj):
+            tokens = ["WEB: Useless empty element cannot have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = False
+        elif self.isOffScreenLabel(obj):
+            tokens = ["WEB: Off-screen label cannot have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = False
+        elif self.isNonNavigablePopup(obj):
+            tokens = ["WEB: Non-navigable popup cannot have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = False
+        elif self.isUselessImage(obj):
+            tokens = ["WEB: Useless image cannot have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = False
+        elif self.isEmptyAnchor(obj):
+            tokens = ["WEB: Empty anchor cannot have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = False
+        elif self.isEmptyToolTip(obj):
+            tokens = ["WEB: Empty tool tip cannot have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = False
+        elif self.isFakePlaceholderForEntry(obj):
+            tokens = ["WEB: Fake placeholder for entry cannot have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = False
+        elif self.isNonInteractiveDescendantOfControl(obj):
+            tokens = ["WEB: Non interactive descendant of control cannot have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = False
+        elif self.isHidden(obj):
+            # We try to do this check only if needed because getting object attributes is
+            # not as performant, and we cannot use the cached attribute because aria-hidden
+            # can change frequently depending on the app.
+            tokens = ["WEB: Hidden object cannot have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = False
+        elif AXComponent.has_no_size(obj):
+            tokens = ["WEB: Allowing sizeless object to have caret context", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = True
+        else:
+            tokens = ["WEB: ", obj, f"can have caret context. ({time.time() - start_time:.4f}s)"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = True
+
+        self._canHaveCaretContextDecision[hash(obj)] = rv
+        msg = f"INFO: _canHaveCaretContext took {time.time() - start_time:.4f}s"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
         return rv
 
-    def _canHaveCaretContext(self, obj):
-        if not obj:
-            return False
-        if self.isDead(obj):
-            msg = "WEB: Dead object cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.isZombie(obj):
-            msg = "WEB: Zombie object cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.isHidden(obj):
-            msg = "WEB: Hidden object cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.isOffScreenLabel(obj):
-            msg = "WEB: Off-screen label cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.isNonNavigablePopup(obj):
-            msg = "WEB: Non-navigable popup cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.isUselessImage(obj):
-            msg = "WEB: Useless image cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.isUselessEmptyElement(obj):
-            msg = "WEB: Useless empty element cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.isEmptyAnchor(obj):
-            msg = "WEB: Empty anchor cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.isEmptyToolTip(obj):
-            msg = "WEB: Empty tool tip cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.hasNoSize(obj):
-            msg = "WEB: Allowing sizeless object to have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return True
-        if self.isParentOfNullChild(obj):
-            msg = "WEB: Parent of null child cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.isPseudoElement(obj):
-            msg = "WEB: Pseudo element cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.isStaticTextLeaf(obj):
-            msg = "WEB: Static text leaf cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.isFakePlaceholderForEntry(obj):
-            msg = "WEB: Fake placeholder for entry cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-        if self.isNonInteractiveDescendantOfControl(obj):
-            msg = "WEB: Non interactive descendant of control cannot have caret context %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return False
-
-        return True
-
-    def isPseudoElement(self, obj):
-        return False
-
     def searchForCaretContext(self, obj):
-        msg = "WEB: Searching for caret context in %s" % obj
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: Searching for caret context in", obj]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
         container = obj
         contextObj, contextOffset = None, -1
         while obj:
-            try:
-                offset = obj.queryText().caretOffset
-            except:
-                msg = "WEB: Exception getting caret offset of %s" % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
+            offset = AXText.get_caret_offset(obj)
+            if offset < 0:
                 obj = None
             else:
                 contextObj, contextOffset = obj, offset
-                child = self.getChildAtOffset(obj, offset)
+                child = AXHypertext.get_child_at_offset(obj, offset)
                 if child:
                     obj = child
                 else:
@@ -4752,57 +3140,69 @@ class Utilities(script_utilities.Utilities):
         return None, -1
 
     def _getCaretContextViaLocusOfFocus(self):
-        obj = orca_state.locusOfFocus
+        obj = focus_manager.get_manager().get_locus_of_focus()
+        msg = "WEB: Getting caret context via locusOfFocus"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
         if not self.inDocumentContent(obj):
             return None, -1
 
-        try:
-            offset = obj.queryText().caretOffset
-        except NotImplementedError:
-            offset = 0
-        except:
-            offset = -1
+        if not AXObject.supports_text(obj):
+            return obj, 0
 
-        return obj, offset
+        return obj, AXText.get_caret_offset(obj)
 
-    def getCaretContext(self, documentFrame=None, getZombieReplicant=False, searchIfNeeded=True):
-        msg = "WEB: Getting caret context for %s" % documentFrame
-        debug.println(debug.LEVEL_INFO, msg, True)
+    def getCaretContext(self, documentFrame=None, getReplicant=False, searchIfNeeded=True):
+        tokens = ["WEB: Getting caret context for", documentFrame]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
-        if not documentFrame or self.isZombie(documentFrame):
+        if not AXObject.is_valid(documentFrame):
             documentFrame = self.documentFrame()
+            tokens = ["WEB: Now getting caret context for", documentFrame]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
         if not documentFrame:
             if not searchIfNeeded:
                 msg = "WEB: Returning None, -1: No document and no search requested."
-                debug.println(debug.LEVEL_INFO, msg, True)
+                debug.print_message(debug.LEVEL_INFO, msg, True)
                 return None, -1
 
             obj, offset = self._getCaretContextViaLocusOfFocus()
-            msg = "WEB: Returning %s, %i (from locusOfFocus)" % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: Returning", obj, ", ", offset, "(from locusOfFocus)"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return obj, offset
 
-        context = self._caretContexts.get(hash(documentFrame.parent))
+        context = self._caretContexts.get(hash(AXObject.get_parent(documentFrame)))
+        if context is not None:
+            tokens = ["WEB: Cached context of", documentFrame, "is", context[0], ", ", context[1]]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+        else:
+            tokens = ["WEB: No cached context for", documentFrame, "."]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            obj, offset = None, -1
+
         if not context or not self.isTopLevelDocument(documentFrame):
             if not searchIfNeeded:
+                msg = "WEB: Returning None, -1: No top-level document with context " \
+                      "and no search requested."
+                debug.print_message(debug.LEVEL_INFO, msg, True)
                 return None, -1
             obj, offset = self.searchForCaretContext(documentFrame)
-        elif not getZombieReplicant:
-            return context
-        elif self.isZombie(context[0]):
-            msg = "WEB: Context is Zombie. Searching for replicant."
-            debug.println(debug.LEVEL_INFO, msg, True)
+        elif not getReplicant:
+            obj, offset = context
+        elif not AXObject.is_valid(context[0]):
+            msg = "WEB: Context is not valid. Searching for replicant."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             obj, offset = self.findContextReplicant()
             if obj:
-                caretObj, caretOffset = self.searchForCaretContext(obj.parent)
-                if caretObj and not self.isZombie(caretObj):
+                caretObj, caretOffset = self.searchForCaretContext(AXObject.get_parent(obj))
+                if caretObj and AXObject.is_valid(caretObj):
                     obj, offset = caretObj, caretOffset
         else:
             obj, offset = context
 
+        tokens = ["WEB: Result context of", documentFrame, "is", obj, ", ", offset, "."]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
         self.setCaretContext(obj, offset, documentFrame)
-
         return obj, offset
 
     def getCaretContextPathRoleAndName(self, documentFrame=None):
@@ -4810,24 +3210,9 @@ class Utilities(script_utilities.Utilities):
         if not documentFrame:
             return [-1], None, None
 
-        rv = self._contextPathsRolesAndNames.get(hash(documentFrame.parent))
+        rv = self._contextPathsRolesAndNames.get(hash(AXObject.get_parent(documentFrame)))
         if not rv:
             return [-1], None, None
-
-        return rv
-
-    def getObjectFromPath(self, path):
-        start = self._script.app
-        rv = None
-        for p in path:
-            if p == -1:
-                continue
-            try:
-                start = start[p]
-            except:
-                break
-        else:
-            rv = start
 
         return rv
 
@@ -4837,133 +3222,191 @@ class Utilities(script_utilities.Utilities):
         if not documentFrame:
             return
 
-        parent = documentFrame.parent
+        parent = AXObject.get_parent(documentFrame)
         self._caretContexts.pop(hash(parent), None)
         self._priorContexts.pop(hash(parent), None)
 
     def handleEventFromContextReplicant(self, event, replicant):
-        if self.isDead(replicant):
+        if AXObject.is_dead(replicant):
             msg = "WEB: Context replicant is dead."
-            debug.println(debug.LEVEL_INFO, msg, True)
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return False
 
-        if not self.isDead(orca_state.locusOfFocus):
-            msg = "WEB: Not event from context replicant. locusOfFocus %s is not dead." \
-                % orca_state.locusOfFocus
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if not focus_manager.get_manager().focus_is_dead():
+            msg = "WEB: Not event from context replicant, locus of focus is not dead."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return False
 
         path, role, name = self.getCaretContextPathRoleAndName()
-        replicantPath = pyatspi.getPath(replicant)
+        replicantPath = AXObject.get_path(replicant)
         if path != replicantPath:
-            msg = "WEB: Not event from context replicant. Path %s != replicant path %s." \
-                % (path, replicantPath)
+            tokens = ["WEB: Not event from context replicant. Path", path,
+                      " != replicant path", replicantPath]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return False
 
-        replicantRole = replicant.getRole()
+        replicantRole = AXObject.get_role(replicant)
         if role != replicantRole:
-            msg = "WEB: Not event from context replicant. Role %s != replicant role %s." \
-                % (role, replicantRole)
+            tokens = ["WEB: Not event from context replicant. Role", role,
+                      " != replicant role", replicantRole]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return False
 
-        notify = replicant.name != name
+        notify = AXObject.get_name(replicant) != name
         documentFrame = self.documentFrame()
-        obj, offset = self._caretContexts.get(hash(documentFrame.parent))
+        obj, offset = self._caretContexts.get(hash(AXObject.get_parent(documentFrame)))
 
-        msg = "WEB: Is event from context replicant. Notify: %s" % notify
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: Is event from context replicant. Notify:", notify]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
-        orca.setLocusOfFocus(event, replicant, notify)
+        focus_manager.get_manager().set_locus_of_focus(event, replicant, notify)
         self.setCaretContext(replicant, offset, documentFrame)
         return True
 
-    def handleEventForRemovedChild(self, event):
-        if event.any_data == orca_state.locusOfFocus:
-            msg = "WEB: Removed child is locusOfFocus."
-            debug.println(debug.LEVEL_INFO, msg, True)
-        elif pyatspi.findAncestor(orca_state.locusOfFocus, lambda x: x == event.any_data):
-            msg = "WEB: Removed child is ancestor of locusOfFocus."
-            debug.println(debug.LEVEL_INFO, msg, True)
+    def _handleEventForRemovedSelectableChild(self, event):
+        container = None
+        if AXUtilities.is_list_box(event.source):
+            container = event.source
+        elif AXUtilities.is_tree(event.source):
+            container = event.source
         else:
+            container = AXObject.find_ancestor(event.source, AXUtilities.is_list_box) \
+                or AXObject.find_ancestor(event.source, AXUtilities.is_tree)
+        if container is None:
+            msg = "WEB: Could not find listbox or tree to recover from removed child."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return False
+
+        tokens = ["WEB: Checking", container, "for focused child."]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+
+        # TODO - JD: Can we remove this? If it's needed, should it be recursive?
+        AXObject.clear_cache(container, False, "Handling event for removed selectable child.")
+        item = AXUtilities.get_focused_object(container)
+        if not (AXUtilities.is_list_item(item) or AXUtilities.is_tree_item):
+            msg = "WEB: Could not find focused item to recover from removed child."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return False
+
+        names = self._script.point_of_reference.get('names', {})
+        oldName = names.get(hash(focus_manager.get_manager().get_locus_of_focus()))
+        notify = AXObject.get_name(item) != oldName
+
+        tokens = ["WEB: Recovered from removed child. New focus is: ", item, "0"]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+        focus_manager.get_manager().set_locus_of_focus(event, item, notify)
+        self.setCaretContext(item, 0)
+        return True
+
+    def handleEventForRemovedChild(self, event):
+        focus = focus_manager.get_manager().get_locus_of_focus()
+        if event.any_data == focus:
+            msg = "WEB: Removed child is locus of focus."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+        elif AXObject.find_ancestor(focus, lambda x: x == event.any_data):
+            msg = "WEB: Removed child is ancestor of locus of focus."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+        else:
+            msg = "WEB: Removed child is not locus of focus nor ancestor of locus of focus."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return False
 
         if event.detail1 == -1:
             msg = "WEB: Event detail1 is useless."
-            debug.println(debug.LEVEL_INFO, msg, True)
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return False
+
+        if self._handleEventForRemovedSelectableChild(event):
+            return True
 
         obj, offset = None, -1
         notify = True
-        keyString, mods = self.lastKeyAndModifiers()
-        if keyString == "Up":
-            if event.detail1 >= event.source.childCount:
+        childCount = AXObject.get_child_count(event.source)
+        if input_event_manager.get_manager().last_event_was_up():
+            if event.detail1 >= childCount:
                 msg = "WEB: Last child removed. Getting new location from end of parent."
-                debug.println(debug.LEVEL_INFO, msg, True)
+                debug.print_message(debug.LEVEL_INFO, msg, True)
                 obj, offset = self.previousContext(event.source, -1)
-            elif 0 <= event.detail1 - 1 < event.source.childCount:
-                child = event.source[event.detail1 - 1]
-                msg = "WEB: Getting new location from end of previous child %s." % child
-                debug.println(debug.LEVEL_INFO, msg, True)
+            elif 0 <= event.detail1 - 1 < childCount:
+                child = AXObject.get_child(event.source, event.detail1 - 1)
+                tokens = ["WEB: Getting new location from end of previous child", child, "."]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 obj, offset = self.previousContext(child, -1)
             else:
                 prevObj = self.findPreviousObject(event.source)
-                msg = "WEB: Getting new location from end of source's previous object %s." % prevObj
-                debug.println(debug.LEVEL_INFO, msg, True)
+                tokens = ["WEB: Getting new location from end of source's previous object",
+                          prevObj, "."]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 obj, offset = self.previousContext(prevObj, -1)
 
-        elif keyString == "Down":
+        elif input_event_manager.get_manager().last_event_was_down():
             if event.detail1 == 0:
                 msg = "WEB: First child removed. Getting new location from start of parent."
-                debug.println(debug.LEVEL_INFO, msg, True)
+                debug.print_message(debug.LEVEL_INFO, msg, True)
                 obj, offset = self.nextContext(event.source, -1)
-            elif 0 < event.detail1 < event.source.childCount:
-                child = event.source[event.detail1]
-                msg = "WEB: Getting new location from start of child %i %s." % (event.detail1, child)
-                debug.println(debug.LEVEL_INFO, msg, True)
+            elif 0 < event.detail1 < childCount:
+                child = AXObject.get_child(event.source, event.detail1)
+                tokens = ["WEB: Getting new location from start of child", event.detail1,
+                          child, "."]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 obj, offset = self.nextContext(child, -1)
             else:
                 nextObj = self.findNextObject(event.source)
-                msg = "WEB: Getting new location from start of source's next object %s." % nextObj
-                debug.println(debug.LEVEL_INFO, msg, True)
+                tokens = ["WEB: Getting new location from start of source's next object",
+                          nextObj, "."]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 obj, offset = self.nextContext(nextObj, -1)
 
         else:
             notify = False
+            # TODO - JD: Can we remove this? Even if it is needed, we now also clear the
+            # cache in _handleEventForRemovedSelectableChild. Also, if it is needed, should
+            # it be recursive?
+            AXObject.clear_cache(event.source, False, "Handling event for removed child.")
             obj, offset = self.searchForCaretContext(event.source)
+            if obj is None:
+                obj = AXUtilities.get_focused_object(event.source)
+
+            # Risk "chattiness" if the locusOfFocus is dead and the object we've found is
+            # focused and has a different name than the last known focused object.
+            if obj and focus_manager.get_manager().focus_is_dead() and AXUtilities.is_focused(obj):
+                names = self._script.point_of_reference.get('names', {})
+                oldName = names.get(hash(focus_manager.get_manager().get_locus_of_focus()))
+                notify = AXObject.get_name(obj) != oldName
 
         if obj:
             msg = "WEB: Setting locusOfFocus and context to: %s, %i" % (obj, offset)
-            orca.setLocusOfFocus(event, obj, notify)
+            focus_manager.get_manager().set_locus_of_focus(event, obj, notify)
             self.setCaretContext(obj, offset)
             return True
 
-        msg = "WEB: Unable to find context for child removed from %s" % event.source
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: Unable to find context for child removed from", event.source]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
         return False
 
     def findContextReplicant(self, documentFrame=None, matchRole=True, matchName=True):
         path, oldRole, oldName = self.getCaretContextPathRoleAndName(documentFrame)
         obj = self.getObjectFromPath(path)
         if obj and matchRole:
-            if obj.getRole() != oldRole:
+            if AXObject.get_role(obj) != oldRole:
                 obj = None
         if obj and matchName:
-            if obj.name != oldName:
+            if AXObject.get_name(obj) != oldName:
                 obj = None
         if not obj:
             return None, -1
 
         obj, offset = self.findFirstCaretContext(obj, 0)
-        msg = "WEB: Context replicant is %s, %i" % (obj, offset)
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["WEB: Context replicant is", obj, ", ", offset]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
         return obj, offset
 
     def getPriorContext(self, documentFrame=None):
-        if not documentFrame or self.isZombie(documentFrame):
+        if not AXObject.is_valid(documentFrame):
             documentFrame = self.documentFrame()
 
         if documentFrame:
-            context = self._priorContexts.get(hash(documentFrame.parent))
+            context = self._priorContexts.get(hash(AXObject.get_parent(documentFrame)))
             if context:
                 return context
 
@@ -4974,13 +3417,7 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        try:
-            rv = pyatspi.getPath(obj)
-        except:
-            msg = "WEB: Exception getting path for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            rv = [-1]
-
+        rv = AXObject.get_path(obj) or [-1]
         self._paths[hash(obj)] = rv
         return rv
 
@@ -4989,119 +3426,121 @@ class Utilities(script_utilities.Utilities):
         if not documentFrame:
             return
 
-        parent = documentFrame.parent
+        parent = AXObject.get_parent(documentFrame)
         oldObj, oldOffset = self._caretContexts.get(hash(parent), (obj, offset))
         self._priorContexts[hash(parent)] = oldObj, oldOffset
         self._caretContexts[hash(parent)] = obj, offset
 
         path = self._getPath(obj)
-        try:
-            role = obj.getRole()
-            name = obj.name
-        except:
-            msg = "WEB: Exception getting role and name for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            role = None
-            name = None
-
+        role = AXObject.get_role(obj)
+        name = AXObject.get_name(obj)
         self._contextPathsRolesAndNames[hash(parent)] = path, role, name
 
     def findFirstCaretContext(self, obj, offset):
-        msg = "WEB: Looking for first caret context for %s, %i" % (obj, offset)
-        debug.println(debug.LEVEL_INFO, msg, True)
+        self._canHaveCaretContextDecision = {}
+        rv = self._findFirstCaretContext(obj, offset)
+        self._canHaveCaretContextDecision = {}
+        return rv
 
-        try:
-            role = obj.getRole()
-        except:
-            msg = "WEB: Exception getting first caret context for %s %i" % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return None, -1
+    def _findFirstCaretContext(self, obj, offset):
+        tokens = ["WEB: Looking for first caret context for", obj, ", ", offset]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
-        lookInChild = [pyatspi.ROLE_LIST,
-                       pyatspi.ROLE_INTERNAL_FRAME,
-                       pyatspi.ROLE_TABLE,
-                       pyatspi.ROLE_TABLE_ROW]
-        if role in lookInChild and obj.childCount and not self.treatAsDiv(obj, offset):
-            msg = "WEB: First caret context for %s, %i will look in child %s" % (obj, offset, obj[0])
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return self.findFirstCaretContext(obj[0], 0)
+        role = AXObject.get_role(obj)
+        lookInChild = [Atspi.Role.LIST,
+                       Atspi.Role.INTERNAL_FRAME,
+                       Atspi.Role.TABLE,
+                       Atspi.Role.TABLE_ROW]
+        if role in lookInChild \
+           and AXObject.get_child_count(obj) and not self.treatAsDiv(obj, offset):
+            firstChild = AXObject.get_child(obj, 0)
+            tokens = ["WEB: Will look in child", firstChild, "for first caret context"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return self._findFirstCaretContext(firstChild, 0)
 
-        text = self.queryNonEmptyText(obj)
-        if not text and self._canHaveCaretContext(obj):
-            msg = "WEB: First caret context for non-text context %s, %i is %s, %i" % (obj, offset, obj, 0)
-            debug.println(debug.LEVEL_INFO, msg, True)
+        treatAsText = self.treatAsTextObject(obj)
+        if not treatAsText and self._canHaveCaretContext(obj):
+            tokens = ["WEB: First caret context for non-text context is", obj, "0"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return obj, 0
 
-        if text and offset >= text.characterCount:
-            if self.isContentEditableWithEmbeddedObjects(obj) and self.lastInputEventWasCharNav():
-                nextObj, nextOffset = self.nextContext(obj, text.characterCount)
+        length = AXText.get_character_count(obj)
+        if treatAsText and offset >= length:
+            if self.isContentEditableWithEmbeddedObjects(obj) \
+               and input_event_manager.get_manager().last_event_was_character_navigation():
+                nextObj, nextOffset = self.nextContext(obj, length)
                 if not nextObj:
-                    msg = "WEB: No next object found at end of contenteditable %s" % obj
-                    debug.println(debug.LEVEL_INFO, msg, True)
+                    tokens = ["WEB: No next object found at end of contenteditable", obj]
+                    debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 elif not self.isContentEditableWithEmbeddedObjects(nextObj):
-                    msg = "WEB: Next object found at end of contenteditable %s is not editable %s" % (obj, nextObj)
-                    debug.println(debug.LEVEL_INFO, msg, True)
+                    tokens = ["WEB: Next object", nextObj,
+                              "found at end of contenteditable", obj, "is not editable"]
+                    debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 else:
-                    msg = "WEB: First caret context at end of contenteditable %s is next context %s, %i" % \
-                        (obj, nextObj, nextOffset)
-                    debug.println(debug.LEVEL_INFO, msg, True)
+                    tokens = ["WEB: First caret context at end of contenteditable", obj,
+                              "is next context", nextObj, ", ", nextOffset]
+                    debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                     return nextObj, nextOffset
 
-            msg = "WEB: First caret context at end of %s, %i is %s, %i" % (obj, offset, obj, text.characterCount)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return obj, text.characterCount
+            tokens = ["WEB: First caret context at end of", obj, ", ", offset, "is",
+                      obj, ", ", length]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return obj, length
 
-        offset = max (0, offset)
-        if text:
-            allText = text.getText(0, -1)
-            if allText[offset] != self.EMBEDDED_OBJECT_CHARACTER or role == pyatspi.ROLE_ENTRY:
-                msg = "WEB: First caret context for %s, %i is unchanged" % (obj, offset)
-                debug.println(debug.LEVEL_INFO, msg, True)
+        offset = max(0, offset)
+        if treatAsText:
+            allText = AXText.get_all_text(obj)
+            if (allText and allText[offset] != self.EMBEDDED_OBJECT_CHARACTER) \
+               or role == Atspi.Role.ENTRY:
+                msg = "WEB: First caret context is unchanged"
+                debug.print_message(debug.LEVEL_INFO, msg, True)
                 return obj, offset
 
-            # Descending an element that we're treating as a whole can lead to looping/getting stuck.
+            # Descending an element that we're treating as whole can lead to looping/getting stuck.
             if self.elementLinesAreSingleChars(obj):
-                msg = "WEB: EOC in single-char-lines element. Returning %s, %i unchanged." % (obj, offset)
-                debug.println(debug.LEVEL_INFO, msg, True)
+                msg = "WEB: EOC in single-char-lines element. Returning context unchanged."
+                debug.print_message(debug.LEVEL_INFO, msg, True)
                 return obj, offset
 
-        child = self.getChildAtOffset(obj, offset)
+        child = AXHypertext.get_child_at_offset(obj, offset)
         if not child:
-            msg = "WEB: Child at offset is null. Returning %s, %i unchanged." % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            msg = "WEB: Child at offset is null. Returning context unchanged."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return obj, offset
 
         if self.isDocument(obj):
             while self.isUselessEmptyElement(child):
-                msg = "WEB: Child %s of %s at offset %i cannot be context." % (child, obj, offset)
-                debug.println(debug.LEVEL_INFO, msg, True)
+                tokens = ["WEB: Child", child, "of", obj, "at offset", offset, "cannot be context."]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 offset += 1
-                child = self.getChildAtOffset(obj, offset)
-
-        if self.isListItemMarker(child):
-            msg = "WEB: First caret context for %s, %i is %s, %i (skip list item marker child)" % \
-                (obj, offset, obj, offset + 1)
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return obj, offset + 1
+                child = AXHypertext.get_child_at_offset(obj, offset)
 
         if self.isEmptyAnchor(child):
             nextObj, nextOffset = self.nextContext(obj, offset)
             if nextObj:
-                msg = "WEB: First caret context at end of empty anchor %s is next context %s, %i" % \
-                    (obj, nextObj, nextOffset)
-                debug.println(debug.LEVEL_INFO, msg, True)
+                tokens = ["WEB: First caret context at end of empty anchor", obj,
+                          "is next context", nextObj, ", ", nextOffset]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                 return nextObj, nextOffset
 
         if not self._canHaveCaretContext(child):
-            msg = "WEB: Child cannot be context. Returning %s, %i." % (obj, offset)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["WEB: Child", child, "cannot be context. Returning", obj, ", ", offset]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return obj, offset
 
-        msg = "WEB: Looking in child %s for first caret context for %s, %i" % (child, obj, offset)
-        debug.println(debug.LEVEL_INFO, msg, True)
-        return self.findFirstCaretContext(child, 0)
+        tokens = ["WEB: Looking in child", child, "for first caret context for", obj, ", ", offset]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+        return self._findFirstCaretContext(child, 0)
 
     def findNextCaretInOrder(self, obj=None, offset=-1):
+        start_time = time.time()
+        rv = self._findNextCaretInOrder(obj, offset)
+        tokens = ["WEB: Next caret in order for", obj, ", ", offset, ":",
+                  rv[0], ", ", rv[1], f"({time.time() - start_time:.4f}s)"]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+        return rv
+
+    def _findNextCaretInOrder(self, obj=None, offset=-1):
         if not obj:
             obj, offset = self.getCaretContext()
 
@@ -5109,23 +3548,23 @@ class Utilities(script_utilities.Utilities):
             return None, -1
 
         if self._canHaveCaretContext(obj):
-            text = self.queryNonEmptyText(obj)
-            if text:
-                allText = text.getText(0, -1)
+            if self.treatAsTextObject(obj) and AXText.get_character_count(obj):
+                allText = AXText.get_all_text(obj)
                 for i in range(offset + 1, len(allText)):
-                    child = self.getChildAtOffset(obj, i)
+                    child = AXHypertext.get_child_at_offset(obj, i)
                     if child and allText[i] != self.EMBEDDED_OBJECT_CHARACTER:
-                        msg = "ERROR: Child %s found at offset with char '%s'" % \
-                            (child, allText[i].replace("\n", "\\n"))
-                        debug.println(debug.LEVEL_INFO, msg, True)
+                        tokens = ["ERROR: Child", child, "found at offset with char '",
+                                  allText[i].replace("\n", "\\n"), "'"]
+                        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                     if self._canHaveCaretContext(child):
                         if self._treatObjectAsWhole(child, -1):
                             return child, 0
-                        return self.findNextCaretInOrder(child, -1)
-                    if allText[i] not in (self.EMBEDDED_OBJECT_CHARACTER, self.ZERO_WIDTH_NO_BREAK_SPACE):
+                        return self._findNextCaretInOrder(child, -1)
+                    if allText[i] not in (
+                            self.EMBEDDED_OBJECT_CHARACTER, self.ZERO_WIDTH_NO_BREAK_SPACE):
                         return obj, i
-            elif obj.childCount and not self._treatObjectAsWhole(obj, offset):
-                return self.findNextCaretInOrder(obj[0], -1)
+            elif AXObject.get_child_count(obj) and not self._treatObjectAsWhole(obj, offset):
+                return self._findNextCaretInOrder(AXObject.get_child(obj, 0), -1)
             elif offset < 0 and not self.isTextBlockElement(obj):
                 return obj, 0
 
@@ -5133,19 +3572,19 @@ class Utilities(script_utilities.Utilities):
         if self.isTopLevelDocument(obj):
             return None, -1
 
-        while obj and obj.parent:
-            if self.isDetachedDocument(obj.parent):
-                obj = self.iframeForDetachedDocument(obj.parent)
+        while obj and AXObject.get_parent(obj):
+            if self.isDetachedDocument(AXObject.get_parent(obj)):
+                obj = self.iframeForDetachedDocument(AXObject.get_parent(obj))
                 continue
 
-            parent = obj.parent
-            if self.isZombie(parent):
-                msg = "WEB: Finding next caret in order. Parent is Zombie."
-                debug.println(debug.LEVEL_INFO, msg, True)
+            parent = AXObject.get_parent(obj)
+            if not AXObject.is_valid(parent):
+                msg = "WEB: Finding next caret in order. Parent is not valid."
+                debug.print_message(debug.LEVEL_INFO, msg, True)
                 replicant = self.findReplicant(self.documentFrame(), parent)
-                if replicant and not self.isZombie(replicant):
+                if AXObject.is_valid(replicant):
                     parent = replicant
-                elif parent.parent:
+                elif AXObject.get_parent(parent):
                     obj = parent
                     continue
                 else:
@@ -5153,22 +3592,24 @@ class Utilities(script_utilities.Utilities):
 
             start, end, length = self._rangeInParentWithLength(obj)
             if start + 1 == end and 0 <= start < end <= length:
-                return self.findNextCaretInOrder(parent, start)
+                return self._findNextCaretInOrder(parent, start)
 
-            index = obj.getIndexInParent() + 1
-            try:
-                parentChildCount = parent.childCount
-            except:
-                msg = "WEB: Exception getting childCount for %s" % parent
-                debug.println(debug.LEVEL_INFO, msg, True)
-            else:
-                if 0 < index < parentChildCount:
-                    return self.findNextCaretInOrder(parent[index], -1)
+            child = AXObject.get_next_sibling(obj)
+            if child:
+                return self._findNextCaretInOrder(child, -1)
             obj = parent
 
         return None, -1
 
     def findPreviousCaretInOrder(self, obj=None, offset=-1):
+        start_time = time.time()
+        rv = self._findPreviousCaretInOrder(obj, offset)
+        tokens = ["WEB: Previous caret in order for", obj, ", ", offset, ":",
+                  rv[0], ", ", rv[1], f"({time.time() - start_time:.4f}s)"]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+        return rv
+
+    def _findPreviousCaretInOrder(self, obj=None, offset=-1):
         if not obj:
             obj, offset = self.getCaretContext()
 
@@ -5176,25 +3617,26 @@ class Utilities(script_utilities.Utilities):
             return None, -1
 
         if self._canHaveCaretContext(obj):
-            text = self.queryNonEmptyText(obj)
-            if text:
-                allText = text.getText(0, -1)
+            if self.treatAsTextObject(obj) and AXText.get_character_count(obj):
+                allText = AXText.get_all_text(obj)
                 if offset == -1 or offset > len(allText):
                     offset = len(allText)
                 for i in range(offset - 1, -1, -1):
-                    child = self.getChildAtOffset(obj, i)
+                    child = AXHypertext.get_child_at_offset(obj, i)
                     if child and allText[i] != self.EMBEDDED_OBJECT_CHARACTER:
-                        msg = "ERROR: Child %s found at offset with char '%s'" % \
-                            (child, allText[i].replace("\n", "\\n"))
-                        debug.println(debug.LEVEL_INFO, msg, True)
+                        tokens = ["ERROR: Child", child, "found at offset with char '",
+                                  allText[i].replace("\n", "\\n"), "'"]
+                        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
                     if self._canHaveCaretContext(child):
                         if self._treatObjectAsWhole(child, -1):
                             return child, 0
-                        return self.findPreviousCaretInOrder(child, -1)
-                    if allText[i] not in (self.EMBEDDED_OBJECT_CHARACTER, self.ZERO_WIDTH_NO_BREAK_SPACE):
+                        return self._findPreviousCaretInOrder(child, -1)
+                    if allText[i] not in (
+                            self.EMBEDDED_OBJECT_CHARACTER, self.ZERO_WIDTH_NO_BREAK_SPACE):
                         return obj, i
-            elif obj.childCount and not self._treatObjectAsWhole(obj, offset):
-                return self.findPreviousCaretInOrder(obj[obj.childCount - 1], -1)
+            elif AXObject.get_child_count(obj) and not self._treatObjectAsWhole(obj, offset):
+                return self._findPreviousCaretInOrder(
+                    AXObject.get_child(obj, AXObject.get_child_count(obj) - 1), -1)
             elif offset < 0 and not self.isTextBlockElement(obj):
                 return obj, 0
 
@@ -5202,19 +3644,19 @@ class Utilities(script_utilities.Utilities):
         if self.isTopLevelDocument(obj):
             return None, -1
 
-        while obj and obj.parent:
-            if self.isDetachedDocument(obj.parent):
-                obj = self.iframeForDetachedDocument(obj.parent)
+        while obj and AXObject.get_parent(obj):
+            if self.isDetachedDocument(AXObject.get_parent(obj)):
+                obj = self.iframeForDetachedDocument(AXObject.get_parent(obj))
                 continue
 
-            parent = obj.parent
-            if self.isZombie(parent):
-                msg = "WEB: Finding previous caret in order. Parent is Zombie."
-                debug.println(debug.LEVEL_INFO, msg, True)
+            parent = AXObject.get_parent(obj)
+            if not AXObject.is_valid(parent):
+                msg = "WEB: Finding previous caret in order. Parent is not valid."
+                debug.print_message(debug.LEVEL_INFO, msg, True)
                 replicant = self.findReplicant(self.documentFrame(), parent)
-                if replicant and not self.isZombie(replicant):
+                if AXObject.is_valid(replicant):
                     parent = replicant
-                elif parent.parent:
+                elif AXObject.get_parent(parent):
                     obj = parent
                     continue
                 else:
@@ -5222,156 +3664,35 @@ class Utilities(script_utilities.Utilities):
 
             start, end, length = self._rangeInParentWithLength(obj)
             if start + 1 == end and 0 <= start < end <= length:
-                return self.findPreviousCaretInOrder(parent, start)
+                return self._findPreviousCaretInOrder(parent, start)
 
-            index = obj.getIndexInParent() - 1
-            try:
-                parentChildCount = parent.childCount
-            except:
-                msg = "WEB: Exception getting childCount for %s" % parent
-                debug.println(debug.LEVEL_INFO, msg, True)
-            else:
-                if 0 <= index < parentChildCount:
-                    return self.findPreviousCaretInOrder(parent[index], -1)
+            child = AXObject.get_previous_sibling(obj)
+            if child:
+                return self._findPreviousCaretInOrder(child, -1)
             obj = parent
 
         return None, -1
 
-    def lastQueuedLiveRegion(self):
-        if self._lastQueuedLiveRegionEvent is None:
-            return None
-
-        if self._lastQueuedLiveRegionEvent.type.startswith("object:text-changed:insert"):
-            return self._lastQueuedLiveRegionEvent.source
-
-        if self._lastQueuedLiveRegionEvent.type.startswith("object:children-changed:add"):
-            return self._lastQueuedLiveRegionEvent.any_data
-
-        return None
-
     def handleAsLiveRegion(self, event):
-        if not _settingsManager.getSetting('inferLiveRegions'):
+        if not settings_manager.get_manager().get_setting('inferLiveRegions'):
             return False
 
-        if not self.isLiveRegion(event.source):
+        if not AXUtilities.is_live_region(event.source):
             return False
 
-        if not _settingsManager.getSetting('presentLiveRegionFromInactiveTab') \
+        if not settings_manager.get_manager().get_setting('presentLiveRegionFromInactiveTab') \
            and self.getTopLevelDocumentForObject(event.source) != self.activeDocument():
             msg = "WEB: Live region source is not in active tab."
-            debug.println(debug.LEVEL_INFO, msg, True)
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return False
 
-        if event.type.startswith("object:text-changed:insert"):
-            alert = pyatspi.findAncestor(event.source, self.isAriaAlert)
-            if alert and self.focusedObject(alert) == event.source:
-                msg = "WEB: Focused source will be presented as part of alert"
-                debug.println(debug.LEVEL_INFO, msg, True)
-                return False
+        alert = AXObject.find_ancestor(event.source, AXUtilities.is_aria_alert)
+        if alert and AXUtilities.get_focused_object(alert) == event.source:
+            msg = "WEB: Focused source will be presented as part of alert"
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return False
 
-            if self._lastQueuedLiveRegionEvent \
-               and self._lastQueuedLiveRegionEvent.type == event.type \
-               and self._lastQueuedLiveRegionEvent.any_data == event.any_data:
-                msg = "WEB: Event is believed to be duplicate message"
-                debug.println(debug.LEVEL_INFO, msg, True)
-                return False
-
-        if isinstance(event.any_data, pyatspi.Accessible):
-            try:
-                role = event.any_data.getRole()
-            except:
-                msg = "WEB: Exception getting role for %s" % event.any_data
-                debug.println(debug.LEVEL_INFO, msg, True)
-                return False
-
-            if role in [pyatspi.ROLE_UNKNOWN, pyatspi.ROLE_REDUNDANT_OBJECT] \
-               and self._getTag(event.any_data) in ["", None, "br"]:
-                msg = "WEB: Child has unknown role and no tag %s" % event.any_data
-                debug.println(debug.LEVEL_INFO, msg, True)
-                return False
-
-            if self.lastQueuedLiveRegion() == event.any_data \
-               and self._lastQueuedLiveRegionEvent.type != event.type:
-                msg = "WEB: Event is believed to be redundant live region notification"
-                debug.println(debug.LEVEL_INFO, msg, True)
-                return False
-
-        self._lastQueuedLiveRegionEvent = event
         return True
-
-    def statusBar(self, obj):
-        if self._statusBar and not self.isZombie(self._statusBar):
-            msg = "WEB: Returning cached status bar: %s" % self._statusBar
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return self._statusBar
-
-        self._statusBar = super().statusBar(obj)
-        return self._statusBar
-
-    def getPageObjectCount(self, obj):
-        result = {'landmarks': 0,
-                  'headings': 0,
-                  'forms': 0,
-                  'tables': 0,
-                  'visitedLinks': 0,
-                  'unvisitedLinks': 0}
-
-        docframe = self.documentFrame(obj)
-        msg = "WEB: Document frame for %s is %s" % (obj, docframe)
-        debug.println(debug.LEVEL_INFO, msg, True)
-
-        col = docframe.queryCollection()
-        stateset = pyatspi.StateSet()
-        roles = [pyatspi.ROLE_HEADING,
-                 pyatspi.ROLE_LINK,
-                 pyatspi.ROLE_TABLE,
-                 pyatspi.ROLE_FORM,
-                 pyatspi.ROLE_LANDMARK]
-
-        if not self.supportsLandmarkRole():
-            roles.append(pyatspi.ROLE_SECTION)
-
-        rule = col.createMatchRule(stateset.raw(), col.MATCH_NONE,
-                                   "", col.MATCH_NONE,
-                                   roles, col.MATCH_ANY,
-                                   "", col.MATCH_NONE,
-                                   False)
-
-        matches = col.getMatches(rule, col.SORT_ORDER_CANONICAL, 0, True)
-        col.freeMatchRule(rule)
-        for obj in matches:
-            role = obj.getRole()
-            if role == pyatspi.ROLE_HEADING:
-                result['headings'] += 1
-            elif role == pyatspi.ROLE_FORM:
-                result['forms'] += 1
-            elif role == pyatspi.ROLE_TABLE and not self.isLayoutOnly(obj):
-                result['tables'] += 1
-            elif role == pyatspi.ROLE_LINK:
-                if self.isLink(obj):
-                    if obj.getState().contains(pyatspi.STATE_VISITED):
-                        result['visitedLinks'] += 1
-                    else:
-                        result['unvisitedLinks'] += 1
-            elif self.isLandmark(obj):
-                result['landmarks'] += 1
-
-        return result
-
-    def getPageSummary(self, obj, onlyIfFound=True):
-        result = []
-        counts = self.getPageObjectCount(obj)
-        result.append(messages.landmarkCount(counts.get('landmarks', 0), onlyIfFound))
-        result.append(messages.headingCount(counts.get('headings', 0), onlyIfFound))
-        result.append(messages.formCount(counts.get('forms', 0), onlyIfFound))
-        result.append(messages.tableCount(counts.get('tables', 0), onlyIfFound))
-        result.append(messages.visitedLinkCount(counts.get('visitedLinks', 0), onlyIfFound))
-        result.append(messages.unvisitedLinkCount(counts.get('unvisitedLinks', 0), onlyIfFound))
-        result = list(filter(lambda x: x, result))
-        if not result:
-            return ""
-
-        return messages.PAGE_SUMMARY_PREFIX % ", ".join(result)
 
     def preferDescriptionOverName(self, obj):
         if not self.inDocumentContent(obj):
@@ -5381,46 +3702,15 @@ class Utilities(script_utilities.Utilities):
         if rv is not None:
             return rv
 
-        try:
-            role = obj.getRole()
-            name = obj.name
-            description = obj.description
-        except:
-            msg = "WEB: Exception getting name, description, and role for %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            rv = False
+        name = AXObject.get_name(obj)
+        if len(name) == 1 and ord(name) in range(0xe000, 0xf8ff):
+            tokens = ["WEB: name of", obj, "is in unicode private use area"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            rv = True
+        elif AXObject.get_description(obj):
+            rv = AXUtilities.is_push_button(obj) and len(name) == 1
         else:
-            if len(obj.name) == 1 and ord(obj.name) in range(0xe000, 0xf8ff):
-                msg = "WEB: name of %s is in unicode private use area" % obj
-                debug.println(debug.LEVEL_INFO, msg, True)
-                rv = True
-            else:
-                roles = [pyatspi.ROLE_PUSH_BUTTON]
-                rv = role in roles and len(name) == 1 and description
+            rv = False
 
         self._preferDescriptionOverName[hash(obj)] = rv
         return rv
-
-    def _getCtrlShiftSelectionsStrings(self):
-        """Hacky and to-be-obsoleted method."""
-        return [messages.LINE_SELECTED_DOWN,
-                messages.LINE_UNSELECTED_DOWN,
-                messages.LINE_SELECTED_UP,
-                messages.LINE_UNSELECTED_UP]
-
-    def lastInputEventWasCopy(self):
-        if super().lastInputEventWasCopy():
-            return True
-
-        if not self.inDocumentContent():
-            return False
-
-        if not self.topLevelObjectIsActiveAndCurrent():
-            return False
-
-        if 'Action' in pyatspi.listInterfaces(orca_state.locusOfFocus):
-            msg = "WEB: Treating %s as source of copy" % orca_state.locusOfFocus
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return True
-
-        return False

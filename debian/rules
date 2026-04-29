@@ -1,7 +1,6 @@
 #! /usr/bin/make -f
 
 %:
-	dh $@ --with gnome,python3
+	dh $@
 
-override_dh_missing:
-	dh_missing --fail-missing
+override_dh_gnome_clean:

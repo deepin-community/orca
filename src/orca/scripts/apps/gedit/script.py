@@ -17,6 +17,8 @@
 # Free Software Foundation, Inc., Franklin Street, Fifth Floor,
 # Boston MA  02110-1301 USA.
 
+# pylint: disable=wrong-import-position
+
 """Custom script for gedit."""
 
 __id__        = "$Id$"
@@ -25,148 +27,119 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2005-2008 Sun Microsystems Inc."
 __license__   = "LGPL"
 
-import pyatspi
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk
 
-import orca.orca as orca
-import orca.orca_state as orca_state
-import orca.scripts.toolkits.gtk as gtk
+from orca import focus_manager
+from orca.scripts.toolkits import gtk
+from orca.ax_object import AXObject
+from orca.ax_text import AXText
+from orca.ax_utilities import AXUtilities
 from .spellcheck import SpellCheck
 
+
 class Script(gtk.Script):
+    """Custom script for gedit."""
 
-    def __init__(self, app):
-        """Creates a new script for the given application."""
-
-        gtk.Script.__init__(self, app)
-
-    def getSpellCheck(self):
+    def get_spellcheck(self):
         """Returns the spellcheck for this script."""
 
         return SpellCheck(self)
 
-    def getAppPreferencesGUI(self):
+    def get_app_preferences_gui(self):
         """Returns a GtkGrid containing the application unique configuration
         GUI items for the current application."""
 
-        from gi.repository import Gtk
-
         grid = Gtk.Grid()
         grid.set_border_width(12)
-        grid.attach(self.spellcheck.getAppPreferencesGUI(), 0, 0, 1, 1)
+        grid.attach(self.spellcheck.get_app_preferences_gui(), 0, 0, 1, 1)
         grid.show_all()
 
         return grid
 
-    def getPreferencesFromGUI(self):
+    def get_preferences_from_gui(self):
         """Returns a dictionary with the app-specific preferences."""
 
-        return self.spellcheck.getPreferencesFromGUI()
+        return self.spellcheck.get_preferences_from_gui()
 
-    def locusOfFocusChanged(self, event, oldFocus, newFocus):
+    def locus_of_focus_changed(self, event, old_focus, new_focus):
         """Handles changes of focus of interest to the script."""
 
-        if self.spellcheck.isSuggestionsItem(newFocus):
-            includeLabel = not self.spellcheck.isSuggestionsItem(oldFocus)
-            orca.emitRegionChanged(newFocus)
-            self.updateBraille(newFocus)
-            self.spellcheck.presentSuggestionListItem(includeLabel=includeLabel)
+        if self.spellcheck.is_suggestions_item(new_focus):
+            include_label = not self.spellcheck.is_suggestions_item(old_focus)
+            self.update_braille(new_focus)
+            self.spellcheck.present_suggestion_list_item(include_label=include_label)
             return
 
-        super().locusOfFocusChanged(event, oldFocus, newFocus)
+        super().locus_of_focus_changed(event, old_focus, new_focus)
 
-    def onActiveDescendantChanged(self, event):
+    def on_active_descendant_changed(self, event):
         """Callback for object:active-descendant-changed accessibility events."""
 
-        if event.source == self.spellcheck.getSuggestionsList():
+        if event.source == self.spellcheck.get_suggestions_list():
             return
 
-        gtk.Script.onActiveDescendantChanged(self, event)
+        super().on_active_descendant_changed(event)
 
-    def onCaretMoved(self, event):
+    def on_caret_moved(self, event):
         """Callback for object:text-caret-moved accessibility events."""
 
-        state = event.source.getState()
-        if state.contains(pyatspi.STATE_MULTI_LINE):
-            self.spellcheck.setDocumentPosition(event.source, event.detail1)
+        if AXUtilities.is_multi_line(event.source):
+            self.spellcheck.set_document_position(event.source, event.detail1)
 
-        gtk.Script.onCaretMoved(self, event)
+        super().on_caret_moved(event)
 
-    def onFocusedChanged(self, event):
-        """Callback for object:state-changed:focused accessibility events."""
-
-        if not event.detail1:
-            return
-
-        gtk.Script.onFocusedChanged(self, event)
-
-    def onNameChanged(self, event):
+    def on_name_changed(self, event):
         """Callback for object:property-change:accessible-name events."""
 
-        if not self.spellcheck.isActive():
-            gtk.Script.onNameChanged(self, event)
+        if not self.spellcheck.is_active():
+            super().on_name_changed(event)
             return
 
-        name = event.source.name
-        if name == self.spellcheck.getMisspelledWord():
-            self.spellcheck.presentErrorDetails()
+        name = AXObject.get_name(event.source)
+        if name == self.spellcheck.get_misspelled_word():
+            self.spellcheck.present_error_details()
             return
 
-        parent = event.source.parent
-        if parent != self.spellcheck.getSuggestionsList() \
-           or not parent.getState().contains(pyatspi.STATE_FOCUSED):
+        parent = AXObject.get_parent(event.source)
+        if parent != self.spellcheck.get_suggestions_list() \
+           or not AXUtilities.is_focused(parent):
             return
 
-        entry = self.spellcheck.getChangeToEntry()
-        if name != self.utilities.displayedText(entry):
+        entry = self.spellcheck.get_change_to_entry()
+        if name != AXText.get_all_text(entry):
             return
 
         # If we're here, the locusOfFocus was in the selection list when
         # that list got destroyed and repopulated. Focus is still there.
-        orca.setLocusOfFocus(event, event.source, False)
-        self.updateBraille(orca_state.locusOfFocus)
+        focus_manager.get_manager().set_locus_of_focus(event, event.source, False)
+        self.update_braille(event.source)
 
-    def onSensitiveChanged(self, event):
+    def on_sensitive_changed(self, event):
         """Callback for object:state-changed:sensitive accessibility events."""
 
-        if event.source == self.spellcheck.getChangeToEntry() \
-           and self.spellcheck.presentCompletionMessage():
+        if event.source == self.spellcheck.get_change_to_entry() \
+           and self.spellcheck.present_completion_message():
             return
 
-        gtk.Script.onSensitiveChanged(self, event)
+        super().on_sensitive_changed(event)
 
-    def onTextSelectionChanged(self, event):
-        """Callback for object:text-selection-changed accessibility events."""
-
-        if event.source == orca_state.locusOfFocus:
-            gtk.Script.onTextSelectionChanged(self, event)
-            return
-
-        if not self.utilities.isSearchEntry(orca_state.locusOfFocus, True):
-            return
-
-        if not self.utilities.isShowingAndVisible(event.source):
-            return
-
-        # To avoid extreme chattiness.
-        keyString, mods = self.utilities.lastKeyAndModifiers()
-        if keyString in ["BackSpace", "Delete"]:
-            return
-
-        self.sayLine(event.source)
-
-    def onWindowActivated(self, event):
+    def on_window_activated(self, event):
         """Callback for window:activate accessibility events."""
 
-        gtk.Script.onWindowActivated(self, event)
-        if not self.spellcheck.isCheckWindow(event.source):
+        super().on_window_activated(event)
+        if not self.spellcheck.is_spell_check_window(event.source):
+            self.spellcheck.deactivate()
             return
 
-        self.spellcheck.presentErrorDetails()
-        orca.setLocusOfFocus(None, self.spellcheck.getChangeToEntry(), False)
-        self.updateBraille(orca_state.locusOfFocus)
+        self.spellcheck.present_error_details()
+        entry = self.spellcheck.get_change_to_entry()
+        focus_manager.get_manager().set_locus_of_focus(None, entry, False)
+        self.update_braille(entry)
 
-    def onWindowDeactivated(self, event):
+    def on_window_deactivated(self, event):
         """Callback for window:deactivate accessibility events."""
 
-        gtk.Script.onWindowDeactivated(self, event)
+        super().on_window_deactivated(event)
         self.spellcheck.deactivate()

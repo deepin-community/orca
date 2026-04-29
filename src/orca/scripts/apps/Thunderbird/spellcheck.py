@@ -19,6 +19,8 @@
 # Free Software Foundation, Inc., Franklin Street, Fifth Floor,
 # Boston MA  02110-1301 USA.
 
+# pylint: disable=duplicate-code
+
 """Customized support for spellcheck in Thunderbird."""
 
 __id__ = "$Id$"
@@ -27,67 +29,25 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2014 Igalia, S.L."
 __license__   = "LGPL"
 
-import pyatspi
+from orca import debug
+from orca import spellcheck
+from orca.ax_object import AXObject
+from orca.ax_utilities import AXUtilities
 
-import orca.orca_state as orca_state
-import orca.spellcheck as spellcheck
 
 class SpellCheck(spellcheck.SpellCheck):
+    """Customized support for spellcheck in Thunderbird."""
 
-    def __init__(self, script):
-        super(SpellCheck, self).__init__(script)
-
-    def isAutoFocusEvent(self, event):
-        if event.source != self._changeToEntry:
+    def _is_candidate_window(self, window):
+        if not (AXUtilities.is_dialog(window) or AXUtilities.is_modal(window)):
+            tokens = ["THUNDERBIRD SPELL CHECK:", window, "is not a dialog or modal window"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return False
 
-        locusOfFocus = orca_state.locusOfFocus
-        if not locusOfFocus:
-            return False
+        def is_non_spell_check_child(x):
+            return AXUtilities.is_page_tab_list(x) or AXUtilities.is_split_pane(x)
 
-        role = locusOfFocus.getRole()
-        if not role == pyatspi.ROLE_PUSH_BUTTON:
-            return False
-
-        lastKey, mods = self._script.utilities.lastKeyAndModifiers()
-        keys = self._script.utilities.mnemonicShortcutAccelerator(locusOfFocus)
-        for key in keys:
-            if key.endswith(lastKey.upper()):
-                return True
-
-        return False
-
-    def _isCandidateWindow(self, window):
-        if not (window and window.getRole() == pyatspi.ROLE_DIALOG):
-            return False
-
-        roles = [pyatspi.ROLE_PAGE_TAB_LIST, pyatspi.ROLE_SPLIT_PANE]
-        isNonSpellCheckChild = lambda x: x and x.getRole() in roles
-        if pyatspi.findDescendant(window, isNonSpellCheckChild):
+        if AXObject.find_descendant(window, is_non_spell_check_child):
             return False
 
         return True
-
-    def _findChangeToEntry(self, root):
-        isEntry = lambda x: x and x.getRole() == pyatspi.ROLE_ENTRY \
-                  and x.getState().contains(pyatspi.STATE_SINGLE_LINE)
-        return pyatspi.findDescendant(root, isEntry)
-
-    def _findErrorWidget(self, root):
-        isError = lambda x: x and x.getRole() == pyatspi.ROLE_LABEL \
-                  and not ":" in x.name and not x.getRelationSet()
-        return pyatspi.findDescendant(root, isError)
-
-    def _findSuggestionsList(self, root):
-        isList = lambda x: x and x.getRole() in [pyatspi.ROLE_LIST, pyatspi.ROLE_LIST_BOX] \
-                  and 'Selection' in x.get_interfaces()
-        return pyatspi.findDescendant(root, isList)
-
-    def _getSuggestionIndexAndPosition(self, suggestion):
-        attrs = self._script.utilities.objectAttributes(suggestion)
-        index = attrs.get("posinset")
-        total = attrs.get("setsize")
-        if index is None or total is None:
-            return super()._getSuggestionIndexAndPosition(suggestion)
-
-        return int(index), int(total)

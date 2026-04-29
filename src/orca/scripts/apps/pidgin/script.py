@@ -26,190 +26,149 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2010 Joanmarie Diggs."
 __license__   = "LGPL"
 
-import pyatspi
-
-import orca.debug as debug
-import orca.messages as messages
-import orca.scripts.toolkits.GAIL as GAIL
-import orca.settings as settings
-import orca.speech as speech
+from orca import debug
+from orca import messages
+from orca.scripts.toolkits import gtk
+from orca import settings
+from orca.ax_object import AXObject
+from orca.ax_utilities import AXUtilities
 
 from .chat import Chat
 from .script_utilities import Utilities
 from .speech_generator import SpeechGenerator
 
-########################################################################
-#                                                                      #
-# The Pidgin script class.                                             #
-#                                                                      #
-########################################################################
+class Script(gtk.Script):
+    """Custom script for pidgin."""
 
-class Script(GAIL.Script):
-
-    def __init__(self, app):
-        """Creates a new script for the given application.
-
-        Arguments:
-        - app: the application to create a script for.
-        """
-
-        # So we can take an educated guess at identifying the buddy list.
-        #
-        self._buddyListAncestries = [[pyatspi.ROLE_TREE_TABLE,
-                                      pyatspi.ROLE_SCROLL_PANE,
-                                      pyatspi.ROLE_FILLER,
-                                      pyatspi.ROLE_PAGE_TAB,
-                                      pyatspi.ROLE_PAGE_TAB_LIST,
-                                      pyatspi.ROLE_FILLER,
-                                      pyatspi.ROLE_FRAME]]
-
-        GAIL.Script.__init__(self, app)
-
-    def getChat(self):
+    def get_chat(self):
         """Returns the 'chat' class for this script."""
 
-        return Chat(self, self._buddyListAncestries)
+        return Chat(self)
 
-    def getSpeechGenerator(self):
+    def get_speech_generator(self):
         """Returns the speech generator for this script. """
 
         return SpeechGenerator(self)
 
-    def getUtilities(self):
-        """Returns the utilites for this script."""
+    def get_utilities(self):
+        """Returns the utilities for this script."""
 
         return Utilities(self)
 
-    def setupInputEventHandlers(self):
-        """Defines InputEventHandler fields for this script that can be
-        called by the key and braille bindings. Here we need to add the
-        handlers for chat functionality.
-        """
+    def setup_input_event_handlers(self):
+        """Defines the input event handlers for this script."""
 
-        GAIL.Script.setupInputEventHandlers(self)
-        self.inputEventHandlers.update(self.chat.inputEventHandlers)
+        super().setup_input_event_handlers()
+        self.input_event_handlers.update(self.chat.input_event_handlers)
 
-    def getAppKeyBindings(self):
+    def get_app_key_bindings(self):
         """Returns the application-specific keybindings for this script."""
 
-        return self.chat.keyBindings
+        return self.chat.key_bindings
 
-    def getAppPreferencesGUI(self):
+    def get_app_preferences_gui(self):
         """Return a GtkGrid containing the application unique configuration
         GUI items for the current application. The chat-related options get
         created by the chat module."""
 
-        return self.chat.getAppPreferencesGUI()
+        return self.chat.get_app_preferences_gui()
 
-    def getPreferencesFromGUI(self):
+    def get_preferences_from_gui(self):
         """Returns a dictionary with the app-specific preferences."""
 
-        return self.chat.getPreferencesFromGUI()
+        return self.chat.get_preferences_from_gui()
 
-    def onChildrenAdded(self, event):
+    def on_children_added(self, event):
         """Callback for object:children-changed:add accessibility events."""
 
-        # Check to see if a new chat room tab has been created and if it
-        # has, then announce its name. See bug #469098 for more details.
-        #
-        if event.type.startswith("object:children-changed:add"):
-            rolesList = [pyatspi.ROLE_PAGE_TAB_LIST,
-                         pyatspi.ROLE_FILLER,
-                         pyatspi.ROLE_FRAME]
-            if self.utilities.hasMatchingHierarchy(event.source, rolesList):
-                # As it's possible to get this component hierarchy in other
-                # places than the chat room (i.e. the Preferences dialog),
-                # we check to see if the name of the frame is the same as one
-                # of its children. If it is, then it's a chat room tab event.
-                # For a final check, we only announce the new chat tab if the
-                # last child has a name.
-                #
-                nameFound = False
-                frameName = event.source.parent.parent.name
-                for child in event.source:
-                    if frameName and (frameName == child.name):
-                        nameFound = True
-                if nameFound:
-                    child = event.source[-1]
-                    if child.name:
-                        line = messages.CHAT_NEW_TAB % child.name
-                        speech.speak(line)
+        super().on_children_added(event)
+        if not AXUtilities.is_page_tab_list(event.source):
+            return
 
-    def onNameChanged(self, event):
-        """Called whenever a property on an object changes.
+        AXObject.clear_cache(event.source, True, "to ensure tab info is current.")
 
-        Arguments:
-        - event: the Event
-        """
+        if AXUtilities.is_selected(event.any_data):
+            msg = "PIDGIN: Not presenting addition of already-selected tab"
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return
+
+        # In the chat window, the frame name changes to reflect the active chat.
+        # So if we don't have a matching tab, this isn't the chat window.
+        frame = AXObject.find_ancestor(event.source, AXUtilities.is_frame)
+        frame_name = AXObject.get_name(frame)
+        for child in AXObject.iter_children(event.source):
+            if frame_name == AXObject.get_name(child):
+                break
+        else:
+            tokens = ["PIDGIN:", frame, "does not seem to be a chat window"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return
+
+        line = messages.CHAT_NEW_TAB % AXObject.get_name(event.any_data)
+        voice = self.speech_generator.voice(obj=event.any_data, string=line)
+        self.speakMessage(line, voice=voice)
+
+    def on_name_changed(self, event):
+        """Callback for object:property-change:accessible-name events."""
 
         if self.chat.isInBuddyList(event.source):
             return
-        else:
-            GAIL.Script.onNameChanged(self, event)
 
-    def onTextDeleted(self, event):
-        """Called whenever text is deleted from an object.
+        super().on_name_changed(event)
 
-        Arguments:
-        - event: the Event
-        """
+    def on_text_deleted(self, event):
+        """Callback for object:text-changed:delete accessibility events."""
 
         if self.chat.isInBuddyList(event.source):
             return
-        else:
-            GAIL.Script.onTextDeleted(self, event)
 
-    def onTextInserted(self, event):
-        """Called whenever text is added to an object."""
+        super().on_text_deleted(event)
+
+    def on_text_inserted(self, event):
+        """Callback for object:text-changed:insert accessibility events."""
 
         if self.chat.presentInsertedText(event):
             return
 
-        GAIL.Script.onTextInserted(self, event)
+        super().on_text_inserted(event)
 
-    def onValueChanged(self, event):
-        """Called whenever an object's value changes.  Currently, the
-        value changes for non-focused objects are ignored.
-
-        Arguments:
-        - event: the Event
-        """
+    def on_value_changed(self, event):
+        """Callback for object:property-change:accessible-value accessibility events."""
 
         if self.chat.isInBuddyList(event.source):
             return
-        else:
-            GAIL.Script.onValueChanged(self, event)
 
-    def onWindowActivated(self, event):
-        """Called whenever a toplevel window is activated."""
+        super().on_value_changed(event)
+
+    def on_window_activated(self, event):
+        """Callback for window:activate accessibility events."""
 
         if not settings.enableSadPidginHack:
             msg = "PIDGIN: Hack for missing events disabled"
-            debug.println(debug.LEVEL_INFO, msg, True)
-            GAIL.Script.onWindowActivated(self, event)
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            super().on_window_activated(event)
             return
 
         msg = "PIDGIN: Starting hack for missing events"
-        debug.println(debug.LEVEL_INFO, msg, True)
+        debug.print_message(debug.LEVEL_INFO, msg, True)
 
         # Hack to "tickle" the accessible hierarchy. Otherwise, the
         # events we need to present text added to the chatroom are
         # missing.
-        hasRole = lambda x: x and x.getRole() == pyatspi.ROLE_PAGE_TAB
-        allPageTabs = pyatspi.findAllDescendants(event.source, hasRole)
-        msg = "PIDGIN: Hack to work around missing events complete"
-        debug.println(debug.LEVEL_INFO, msg, True)
-        GAIL.Script.onWindowActivated(self, event)
+        AXUtilities.find_all_page_tabs(event.source)
 
-    def onExpandedChanged(self, event):
+        msg = "PIDGIN: Hack to work around missing events complete"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+        super().on_window_activated(event)
+
+    def on_expanded_changed(self, event):
         """Callback for object:state-changed:expanded accessibility events."""
 
         # Overridden here because the event.source is in a hidden column.
         obj = event.source
         if self.chat.isInBuddyList(obj):
-            obj = obj.parent[obj.getIndexInParent() + 1]
-            self.updateBraille(obj)
-            speech.speak(self.speechGenerator.generateSpeech(obj, alreadyFocused=True))
+            obj = AXObject.get_next_sibling(obj)
+            self.presentObject(obj, alreadyFocused=True)
             return
-            
-        GAIL.Script.onExpandedChanged(self, event)
+
+        super().on_expanded_changed(event)

@@ -1,3 +1,296 @@
+orca (48.1-1+deb13u1) trixie; urgency=medium
+
+  * control: Add python3-setproctitle and python3-psutil dependencies.
+
+ -- Samuel Thibault <sthibault@debian.org>  Sat, 23 Aug 2025 23:00:42 +0200
+
+orca (48.1-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Samuel Thibault <sthibault@debian.org>  Fri, 02 May 2025 17:54:28 +0200
+
+orca (48.0-3) unstable; urgency=medium
+
+  * control: Add python3-dbus dependency.
+
+ -- Samuel Thibault <sthibault@debian.org>  Mon, 31 Mar 2025 03:28:36 +0200
+
+orca (48.0-2) unstable; urgency=medium
+
+  * No-change upload to build on buildd.
+
+ -- Samuel Thibault <sthibault@debian.org>  Tue, 18 Mar 2025 09:38:28 +0100
+
+orca (48.0-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Samuel Thibault <sthibault@debian.org>  Mon, 17 Mar 2025 20:21:17 +0100
+
+orca (48~rc-1) experimental; urgency=medium
+
+  * New upstream RC release
+
+ -- Samuel Thibault <sthibault@debian.org>  Mon, 03 Mar 2025 20:42:24 +0100
+
+orca (48~beta-1) experimental; urgency=medium
+
+  * New upstream beta release
+
+ -- Samuel Thibault <sthibault@debian.org>  Thu, 06 Feb 2025 01:29:37 +0100
+
+orca (48~alpha-1) experimental; urgency=medium
+
+  * New upstream alpha release
+
+ -- Samuel Thibault <sthibault@debian.org>  Fri, 10 Jan 2025 00:53:32 +0100
+
+orca (47.3-1) unstable; urgency=medium
+
+  * New upstream release
+  * watch: Fix upstream vcs tag format.
+
+ -- Samuel Thibault <sthibault@debian.org>  Thu, 09 Jan 2025 20:32:24 +0100
+
+orca (47.2-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Samuel Thibault <sthibault@debian.org>  Sun, 24 Nov 2024 00:57:50 +0100
+
+orca (47.1-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Samuel Thibault <sthibault@debian.org>  Fri, 25 Oct 2024 19:40:41 +0200
+
+orca (47.0-1) unstable; urgency=medium
+
+  * New upstream release (Closes: Bug#1082036)
+    - source/lintian-overrides: Update.
+
+ -- Samuel Thibault <sthibault@debian.org>  Tue, 17 Sep 2024 23:39:05 +0200
+
+orca (47~rc-1) experimental; urgency=medium
+
+  * New upstream rc release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Tue, 03 Sep 2024 00:02:15 +0200
+
+orca (47~beta-1) experimental; urgency=medium
+
+  * New upstream beta release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Fri, 23 Aug 2024 00:18:44 +0200
+
+orca (47~alpha-1) experimental; urgency=medium
+
+  * New upstream alpha release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Thu, 04 Jul 2024 14:53:03 +0200
+
+orca (46.2-1) unstable; urgency=medium
+
+  [ Jeremy Bícha ]
+  * Drop gedit patch: orca already handles org.*. app IDs
+
+  [ Samuel Thibault ]
+  * source/lintian-overrides: Shut lintian warning.
+
+ -- Samuel Thibault <sthibault@debian.org>  Tue, 25 Jun 2024 21:45:24 +0200
+
+orca (46.1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * control: Bump atk-bridge dependency version.
+
+ -- Samuel Thibault <sthibault@debian.org>  Mon, 01 Apr 2024 16:18:28 +0200
+
+orca (46.0-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Wed, 13 Mar 2024 16:26:29 +0100
+
+orca (46~beta-1) experimental; urgency=medium
+
+  * New upstream beta.
+    - control: Add meson, git, and gir1.2-gtk-3.0 build-dependencies.
+    - control: Drop python3-pyatspi dependency.
+    - docs: Install README.md instead of README.
+    - manpages: Install docs/orca.1 instead of docs/man/orca.1.
+  * control: Bump at-spi runtime deps to 2.50.0~ too.
+
+ -- Samuel Thibault <sthibault@debian.org>  Fri, 23 Feb 2024 01:42:50 +0100
+
+orca (46~alpha-1) experimental; urgency=medium
+
+  * New upstream alpha.
+    - control: Bump at-spi build-dep to 2.50.0~.
+
+ -- Samuel Thibault <sthibault@debian.org>  Sat, 20 Jan 2024 20:13:20 +0100
+
+orca (45.2-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Sat, 06 Jan 2024 19:41:00 +0100
+
+orca (45.1-2) unstable; urgency=medium
+
+  * Rebuild on buildd (Closes: Bug#1053703)
+
+ -- Samuel Thibault <sthibault@debian.org>  Mon, 09 Oct 2023 13:17:06 +0200
+
+orca (45.1-1) unstable; urgency=medium
+
+  * New upstream release (Closes: Bug#1053119)
+
+ -- Samuel Thibault <sthibault@debian.org>  Fri, 06 Oct 2023 19:30:11 +0200
+
+orca (45.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * watch: Also check non-alpha/beta/rc releases.
+
+ -- Samuel Thibault <sthibault@debian.org>  Fri, 15 Sep 2023 13:55:35 +0100
+
+orca (45~rc-1) experimental; urgency=medium
+
+  * New upstream rc release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Wed, 06 Sep 2023 21:51:13 +0200
+
+orca (45~beta-1) experimental; urgency=medium
+
+  * New upstream beta release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Mon, 14 Aug 2023 13:57:19 +0200
+
+orca (45~alpha-1) experimental; urgency=medium
+
+  * New upstream alpha release.
+    - control: Bump libatspi2.0-dev build-dep to at least version 2.48.
+
+ -- Samuel Thibault <sthibault@debian.org>  Sun, 06 Aug 2023 13:44:01 +0200
+
+orca (44.1-2) unstable; urgency=medium
+
+  * Upload to unstable
+
+ -- Samuel Thibault <sthibault@debian.org>  Thu, 03 Aug 2023 13:22:26 +0200
+
+orca (44.1-1) experimental; urgency=medium
+
+  * New upstream release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Thu, 25 May 2023 18:02:11 +0200
+
+orca (44.0-1) experimental; urgency=medium
+
+  * New upstream release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Fri, 24 Mar 2023 19:16:16 +0100
+
+orca (43.1-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Sun, 29 Jan 2023 16:25:52 +0100
+
+orca (43.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * control: Make Multi-Arch: foreign.
+  * control, rules: Replace dh-python and --with python3 with
+    dh-sequence-python3.
+
+ -- Samuel Thibault <sthibault@debian.org>  Mon, 26 Sep 2022 00:50:48 +0200
+
+orca (43~beta-1) experimental; urgency=medium
+
+  * New upstream beta release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Mon, 29 Aug 2022 16:40:12 +0200
+
+orca (43~alpha-1) experimental; urgency=medium
+
+  * New upstream alpha release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Sun, 03 Jul 2022 23:07:43 +0200
+
+orca (42.2-1) unstable; urgency=medium
+
+  * New upstream release.
+    - patches/git-webkitgtk2: merged.
+
+ -- Samuel Thibault <sthibault@debian.org>  Sun, 03 Jul 2022 22:51:29 +0200
+
+orca (42.1-2) unstable; urgency=high
+
+  * debian/patches/git-webkitgtk2: Fix screen reading of webkitgtk 2.36 which
+    doesn't implement Collection any more.
+
+ -- Samuel Thibault <sthibault@debian.org>  Thu, 19 May 2022 16:58:25 +0200
+
+orca (42.1-1) unstable; urgency=medium
+
+  [ Samuel Thibault ]
+  * New upstream release.
+  * control: Drop gnome-orca transition package, fixed since stretch.
+    - orca.install: drop etc and usr, already installed.
+
+  [ Debian Janitor ]
+  * Bump debhelper from old 12 to 13.
+    + debian/rules: Drop --fail-missing argument to dh_missing, which is now the
+      default.
+
+ -- Samuel Thibault <sthibault@debian.org>  Wed, 18 May 2022 00:55:57 +0200
+
+orca (42.0-1) unstable; urgency=medium
+
+  [ Samuel Thibault ]
+  * New upstream release.
+
+  [ Debian Janitor ]
+  * Remove constraints unnecessary since buster:
+    + Build-Depends: Drop versioned constraint on gettext, gnome-pkg-tools,
+      libatk-bridge2.0-dev, libatspi2.0-dev, python-gi-dev, python3,
+      python3-brlapi, python3-louis, python3-pyatspi and python3-speechd.
+    + orca: Drop versioned constraint on gir1.2-gtk-3.0, python3-brlapi,
+      python3-gi, python3-louis, python3-pyatspi, python3-speechd and
+      speech-dispatcher in Depends.
+    + orca: Drop versioned constraint on gnome-orca in Replaces.
+    + orca: Drop versioned constraint on gnome-orca in Breaks.
+
+ -- Samuel Thibault <sthibault@debian.org>  Thu, 24 Mar 2022 00:47:37 +0100
+
+orca (42~rc-1) experimental; urgency=medium
+
+  * New upstream rc release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Sat, 12 Mar 2022 01:48:56 +0100
+
+orca (42~beta-1) experimental; urgency=medium
+
+  * New upstream beta release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Tue, 15 Feb 2022 20:54:01 +0100
+
+orca (41.2-1) unstable; urgency=medium
+
+  * New upstream release.
+  * control: Bump Standards-Version to 4.6.0 (no change)
+
+ -- Samuel Thibault <sthibault@debian.org>  Mon, 31 Jan 2022 19:05:27 +0100
+
+orca (41.1-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Samuel Thibault <sthibault@debian.org>  Sun, 05 Dec 2021 18:19:09 +0100
+
 orca (41.0-1) unstable; urgency=medium
 
   * New upstream release.

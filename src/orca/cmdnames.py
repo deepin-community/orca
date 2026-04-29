@@ -32,25 +32,19 @@ __license__   = "LGPL"
 
 from .orca_i18n import _
 
-# Translators: this command will move the mouse pointer to the current item
-#  without clicking on it.             
+# Translators: this command will move the mouse pointer to the current item,
+# typically a widget, without clicking on it.
 ROUTE_POINTER_TO_ITEM = _("Route the pointer to the current item")
 
-# Translators: the 'flat review' feature of Orca allows the blind user to
-# explore the text in a window in a 2D fashion.  That is, Orca treats all
-# the text from all objects in a window (e.g., buttons, labels, etc.) as a
-# sequence of words in a sequence of lines.  The flat review feature allows
-# the user to explore this text by the {previous,next} {line,word,character}.
-# Left click means to generate a left mouse button click on the current item.
-LEFT_CLICK_REVIEW_ITEM = _("Perform left click on current flat review item")
+# Translators: Orca has a command to synthesize mouse events. This string
+# describes the Orca command to generate a left mouse button click on the
+# current item, typically a widget.
+LEFT_CLICK_REVIEW_ITEM = _("Perform left click on current item")
 
-# Translators: the 'flat review' feature of Orca allows the blind user to
-# explore the text in a window in a 2D fashion.  That is, Orca treats all
-# the text from all objects in a window (e.g., buttons, labels, etc.) as a
-# sequence of words in a sequence of lines.  The flat review feature allows
-# the user to explore this text by the {previous,next} {line,word,character}.
-# Right click means to generate a right mouse button click on the current item.
-RIGHT_CLICK_REVIEW_ITEM = _("Perform right click on current flat review item")
+# Translators: Orca has a command to synthesize mouse events. This string
+# describes the Orca command to generate a right mouse button click on the
+# current item, typically a widget.
+RIGHT_CLICK_REVIEW_ITEM = _("Perform right click on current item")
 
 # Translators: the Orca "SayAll" command allows the user to press a key and have
 # the entire document in a window be automatically spoken to the user. If the
@@ -89,17 +83,28 @@ WHERE_AM_I_SELECTION = _("Speak the current selection")
 # about a link, such as the uri and type of link.
 WHERE_AM_I_LINK = _("Speak link details")
 
-# Translators: This command will cause the window's status bar contents to be
-# spoken.
-PRESENT_STATUS_BAR = _("Speak the status bar")
+# Translators: This command will cause the dialog's default button name to be
+# spoken and displayed in braille. The "default" button in a dialog box is the
+# button that gets activated when Enter is pressed anywhere within that dialog
+# box.
+PRESENT_DEFAULT_BUTTON = _("Present the default button")
 
-# Translators: This command will cause the window's title to be spoken.
-PRESENT_TITLE = _("Speak the title bar")
+# Translators: This command will cause the window's status bar contents to be
+# spoken and displayed in braille.
+PRESENT_STATUS_BAR = _("Present the status bar")
+
+# Translators: This command will cause the window's title to be spoken and
+# displayed in braille.
+PRESENT_TITLE = _("Present the title bar")
 
 # Translators: the Orca "Find" dialog allows a user to search for text in a
 # window and then move focus to that text. For example, they may want to find
 # the "OK" button.
 SHOW_FIND_GUI = _("Open the Find dialog")
+
+# Translators: Orca has a command which presents a menu with accessible actions
+# that can be performed on the current object. This is the name of that command.
+SHOW_ACTIONS_MENU = _("Show actions menu")
 
 # Translators: the Orca "Find" dialog allows a user to search for text in a
 # window and then move focus to that text. For example, they may want to find
@@ -119,6 +124,14 @@ FIND_PREVIOUS = _("Search for the previous instance of a string")
 # sequence of words in a sequence of lines.  The flat review feature allows
 # the user to explore this text by the {previous,next} {line,word,character}.
 TOGGLE_FLAT_REVIEW = _("Enter and exit flat review mode")
+
+# Translators: the 'flat review' feature of Orca allows the blind user to
+# explore the text in a window in a 2D fashion.  That is, Orca treats all
+# the text from all objects in a window (e.g., buttons, labels, etc.) as a
+# sequence of words in a sequence of lines.  The flat review feature allows
+# the user to explore this text by the {previous,next} {line,word,character}.
+# This switch allows the user to restrict the flat review function to a specific object.
+TOGGLE_RESTRICT_FLAT_REVIEW = _("Toggle restricting flat review to the current object")
 
 # Translators: the 'flat review' feature of Orca allows the blind user to
 # explore the text in a window in a 2D fashion.  That is, Orca treats all
@@ -332,6 +345,17 @@ FLAT_REVIEW_COPY = _("Copy the contents under flat review to the clipboard")
 FLAT_REVIEW_APPEND = \
     _("Append the contents under flat review to the clipboard")
 
+# Translators: the 'flat review' feature of Orca allows the blind user to
+# explore the text in a window in a 2D fashion.  That is, Orca treats all
+# the text from all objects in a window (e.g., buttons, labels, etc.) as a
+# sequence of words in a sequence of lines.  The flat review feature allows
+# the user to explore this text by the {previous,next} {line,word,character}.
+# Normally the contents are navigated without leaving the application being
+# reviewed. There is a command which will place the entire contents of the
+# flat review representation into a text view to make it easy to review
+# and copy the text. This string describes that command.
+FLAT_REVIEW_SHOW_CONTENTS = _("Show flat review contents")
+
 # Translators: when users are navigating a table, they sometimes want the
 # entire row of a table read; other times they just want the current cell
 # to be presented to them.
@@ -419,6 +443,20 @@ DECREASE_SPEECH_VOLUME = _("Decrease the speech volume")
 #  We call it 'silencing'.
 TOGGLE_SPEECH = _("Toggle the silencing of speech")
 
+# Translators: Orca has a sleep mode which causes Orca to essentially behave as
+# if it were not running for a given application. Some use cases include self-
+# voicing apps with associated commands (e.g. ChromeVox) and VMs. In the former
+# case, the self-voicing app is expected to provide all needed commands as well
+# as speech and braille. In the latter case, we want to ensure that Orca's
+# commands and speech/braille do not interfere with that of the VM and any
+# screen reader being used in that VM. Thus when an application is being used
+# in sleep mode, nearly all Orca commands become unbound/free, and nothing is
+# spoken or brailled. But if the user toggles sleep mode off or switches to
+# another application window, Orca commands, speech, and braille immediately
+# resume working. This string is the command which toggles sleep mode on/off
+# for the app being used at the time the command is given.
+TOGGLE_SLEEP_MODE = _("Toggle sleep mode for the current application")
+
 # Translators: Orca's verbosity levels control how much (or how little)
 # Orca will speak when presenting objects as the user navigates within
 # applications and reads content. The levels can be toggled via command.
@@ -449,9 +487,19 @@ TOGGLE_SPOKEN_INDENTATION_AND_JUSTIFICATION = \
 # toggling between the two options.
 CHANGE_NUMBER_STYLE = _("Change spoken number style")
 
+# Translators: Orca has a command to present the current clipboard contents to
+# the user without them having to switch to a clipboard manager application. This
+# string is the description of that command.
+CLIPBOARD_PRESENT_CONTENTS = _("Present clipboard contents")
+
 # Translators: Orca allows users to cycle through punctuation levels. None,
 # some, most, or all, punctuation will be spoken.
 CYCLE_PUNCTUATION_LEVEL = _("Cycle to the next speaking of punctuation level")
+
+# Translators: Orca allows users to cycle through the speech synthesizers
+# available on their system, such as espeak, voxin, mbrola, etc. This string
+# is the description of the command.
+CYCLE_SYNTHESIZER = _("Cycle to the next speech synthesizer")
 
 # Translators: Orca has a feature whereby users can set up different "profiles,"
 # which are collection of settings which apply to a given task, such as a
@@ -485,7 +533,21 @@ CYCLE_KEY_ECHO = _("Cycle to the next key echo level")
 # Translators: this is a debug message that Orca users will not normally see. It
 # describes a debug routine that allows the user to adjust the level of debug
 # information that Orca generates at run time.
-CYCLE_DEBUG_LEVEL = _("Cycle the debug level at run time")
+DEBUG_CYCLE_LEVEL = _("Cycle the debug level at run time")
+
+# Translators: this is a debug message for advanced users and developers. It
+# describes a debug command that allows the user to clear the AT-SPI cache for
+# the currently-running application. This is sometimes needed because applications
+# fail to notify AT-SPI when something changes resulting in AT-SPI having stale
+# information which impacts Orca's logic and/or presentation to users.
+DEBUG_CLEAR_ATSPI_CACHE_FOR_APPLICATION = \
+    _("Clear the AT-SPI cache for the current application")
+
+# Translators: this is a debug message for advanced users and developers. It
+# describes a command to print detailed debugging information about the current
+# state such as the current Orca settings and a list of all the running accessible
+# applications, etc.
+DEBUG_CAPTURE_SNAPSHOT = _("Capture snapshot for debugging")
 
 # Translators: this command announces information regarding the relationship of
 # the given bookmark to the current position. Note that in this context, the
@@ -523,6 +585,14 @@ BOOKMARK_SAVE = _("Save bookmarks")
 # the feature without the need to get into a GUI.
 MOUSE_REVIEW_TOGGLE = _("Toggle mouse review mode")
 
+# Translators: Orca has a command to present the battery status (e.g. level, whether
+# or not it is plugged in, etc.). This string is the name of that command.
+PRESENT_BATTERY_STATUS = _("Present battery status")
+
+# Translators: Orca has a command to present the CPU and memory usage as percents.
+# This string is the name of that command.
+PRESENT_CPU_AND_MEMORY_USAGE = _("Present CPU and memory usage")
+
 # Translators: Orca has a command to present the current time in speech and in
 # braille.
 PRESENT_CURRENT_TIME = _("Present current time")
@@ -536,12 +606,14 @@ PRESENT_CURRENT_DATE = _("Present current date")
 # of keyboard shortcuts.
 PRESENT_SIZE_AND_POSITION = _("Present size and location of current object")
 
-# Translators: Orca normally intercepts all keyboard commands and only passes
-# them along to the current application when they are not Orca commands. This
-# command causes the next command issued to be passed along to the current
-# application, bypassing Orca's interception of it.
-BYPASS_NEXT_COMMAND = \
-    _("Pass the next command on to the current application")
+# Translators: This command toggles all (other) Orca commands so that the
+# associated keystroke can by consumed by the native application. For example,
+# if there were an Orca command bound to Alt+Down, normally pressing Alt+Down
+# would cause the Orca command to be used. This would mean Alt+Down could not
+# be used in editors to move the current line of text down. By temporarily
+# disabling Orca commands, Alt+Down would be ignored by Orca and work as
+# expected in the editor.
+BYPASS_MODE_TOGGLE = _("Toggle all Orca command keys")
 
 # Translators: Orca has a command to review previous chat room messages in
 # speech and braille. This string to be translated is associated with the
@@ -655,6 +727,10 @@ NOTIFICATION_MESSAGES_LIST = _("Present notification messages list")
 # Translators: this is a command which causes Orca to present the previous
 # notification message.
 NOTIFICATION_MESSAGES_PREVIOUS = _("Present previous notification message")
+
+# Translators: this is a command which causes Orca to present the next
+# notification message.
+NOTIFICATION_MESSAGES_NEXT = _("Present next notification message")
 
 # Translators: this is a command related to navigating within a document.
 CARET_NAVIGATION_NEXT_CHAR = _("Go to next character")
@@ -780,6 +856,11 @@ PRESENT_INPUT_LINE = _("Present the contents of the input line")
 # writing functions.
 STRUCTURAL_NAVIGATION_TOGGLE = _("Toggle structural navigation keys")
 
+# Translators: Orca has commands for navigating within a table, e.g. to the
+# next cell in a given direction. This string is the description of the command
+# which enables/disables this support.
+TABLE_NAVIGATION_TOGGLE = _("Toggle table navigation keys")
+
 # Translators: this is for navigating among blockquotes in a document.
 BLOCKQUOTE_PREV = _("Go to previous blockquote")
 
@@ -877,6 +958,15 @@ HEADING_AT_LEVEL_NEXT = _("Go to next heading at level %d")
 # <h1> is a heading at level 1, <h2> is a heading at level 2, etc.
 HEADING_AT_LEVEL_LIST = _("Display a list of headings at level %d")
 
+# Translators: this is for navigating among iframes in a document.
+IFRAME_PREV = _("Go to previous internal frame")
+
+# Translators: this is for navigating among iframes in a document.
+IFRAME_NEXT = _("Go to next internal frame")
+
+# Translators: this is for navigating among images in a document.
+IFRAME_LIST = _("Display a list of internal frames")
+
 # Translators: this is for navigating among images in a document.
 IMAGE_PREV = _("Go to previous image")
 
@@ -958,6 +1048,31 @@ LIVE_REGION_NEXT = _("Go to next live region")
 # ticker. http://www.w3.org/TR/wai-aria/terms#def_liveregion
 LIVE_REGION_LAST = _("Go to the last live region which made an announcement")
 
+# Translators: the object navigator allows users to explore UI objects presented
+# as a hierarchy.
+NAVIGATOR_UP = _("Go to the parent of the object with navigator focus.")
+
+# Translators: the object navigator allows users to explore UI objects presented
+# as a hierarchy.
+NAVIGATOR_DOWN = _("Go to the first child of the object with navigator focus.")
+
+# Translators: the object navigator allows users to explore UI objects presented
+# as a hierarchy.
+NAVIGATOR_NEXT = _("Go to the next sibling of the object with navigator focus.")
+
+# Translators: the object navigator allows users to explore UI objects presented
+# as a hierarchy.
+NAVIGATOR_PREVIOUS = _("Go to the previous sibling of the object with navigator focus.")
+
+# Translators: the object navigator allows users to explore UI objects presented
+# as a hierarchy. Users are also able to synthesize a click on the objects.
+NAVIGATOR_PERFORM_ACTION = _("Click on the object with navigator focus.")
+
+# Translators: the object navigator allows users to explore UI objects presented
+# as a hierarchy. This hierarchy can be simplified, and the simplification can be
+# toggled on and off.
+NAVIGATOR_TOGGLE_SIMPLIFIED = _("Toggle simplified object navigation.")
+
 # Translators: this is for navigating among paragraphs in a document.
 PARAGRAPH_PREV = _("Go to previous paragraph")
 
@@ -1010,6 +1125,18 @@ TABLE_CELL_RIGHT = _("Go right one cell")
 
 # Translators: this is for navigating among table cells in a document.
 TABLE_CELL_UP = _("Go up one cell")
+
+# Translators: this is for navigating among table cells in a document.
+TABLE_CELL_BEGINNING_OF_ROW = _("Go to the beginning of the row")
+
+# Translators: this is for navigating among table cells in a document.
+TABLE_CELL_END_OF_ROW = _("Go to the end of the row")
+
+# Translators: this is for navigating among table cells in a document.
+TABLE_CELL_TOP_OF_COLUMN = _("Go to the top of the column")
+
+# Translators: this is for navigating among table cells in a document.
+TABLE_CELL_BOTTOM_OF_COLUMN = _("Go to the bottom of the column")
 
 # Translators: When presenting the content of a line on a web page, Orca by
 # default presents the full line, including any links or form fields on that

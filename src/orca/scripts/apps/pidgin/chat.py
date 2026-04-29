@@ -17,6 +17,8 @@
 # Free Software Foundation, Inc., Franklin Street, Fifth Floor,
 # Boston MA  02110-1301 USA.
 
+# pylint: disable=duplicate-code
+
 """Custom chat module for Pidgin."""
 
 __id__        = "$Id$"
@@ -25,26 +27,14 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2010 Joanmarie Diggs."
 __license__   = "LGPL"
 
-import orca.chat as chat
-
-########################################################################
-#                                                                      #
-# The Pidgin chat class.                                               #
-#                                                                      #
-########################################################################
+from orca import chat
+from orca.ax_text import AXText
 
 class Chat(chat.Chat):
-
-    def __init__(self, script, buddyListAncestries):
-
-        chat.Chat.__init__(self, script, buddyListAncestries)
+    """Custom chat module for Pidgin."""
 
     def isTypingStatusChangedEvent(self, event):
-        """Returns True if event is associated with a change in typing status.
-
-        Arguments:
-        - event: the accessible event being examined
-        """
+        """Returns True if event is associated with a change in typing status."""
 
         if not event.type.startswith("object:text-changed:insert"):
             return False
@@ -53,12 +43,5 @@ class Chat(chat.Chat):
         # user is typing. We seem able to (more or less) reliably distinguish
         # this text via its attributes because these attributes are absent
         # from user inserted text -- no matter how that text is formatted.
-        #
-        attr, start, end = \
-            self._script.utilities.textAttributes(event.source, event.detail1)
-
-        if float(attr.get('scale', '1')) < 1 \
-           or int(attr.get('weight', '400')) < 400:
-            return True
-
-        return False
+        attr = AXText.get_text_attributes_at_offset(event.source, event.detail1)[0]
+        return float(attr.get("scale", "1")) < 1 or int(attr.get("weight", "400")) < 400

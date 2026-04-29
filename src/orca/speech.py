@@ -17,6 +17,8 @@
 # Free Software Foundation, Inc., Franklin Street, Fifth Floor,
 # Boston MA  02110-1301 USA.
 
+# pylint: disable=broad-exception-caught
+
 """Manages the default speech server for orca.  A script can use this
 as its speech server, or it can feel free to create one of its own."""
 
@@ -27,163 +29,133 @@ __copyright__ = "Copyright (c) 2005-2009 Sun Microsystems Inc."
 __license__   = "LGPL"
 
 import importlib
-import time
 
 from . import debug
-from . import logger
-from . import orca_state
 from . import settings
 from . import speech_generator
-from .speechserver import VoiceFamily
-
 from .acss import ACSS
-
-_logger = logger.getLogger()
-log = _logger.newLog("speech")
+from .speechserver import VoiceFamily
 
 # The speech server to use for all speech operations.
 #
 _speechserver = None
 
-# The last time something was spoken.
-_timestamp = 0
-
-def getSpeechServerFactories():
-    """Imports all known SpeechServer factory modules.  Returns a list
-    of modules that implement the getSpeechServers method, which
-    returns a list of speechserver.SpeechServer instances.
-    """
-
-    factories = []
-
-    moduleNames = settings.speechFactoryModules
-    for moduleName in moduleNames:
-        try:
-            module = importlib.import_module('orca.%s' % moduleName)
-            factories.append(module)
-        except:
-            debug.printException(debug.LEVEL_CONFIGURATION)
-
-    return factories
-
-def _initSpeechServer(moduleName, speechServerInfo):
+def _init_speech_server(module_name, speech_server_info):
 
     global _speechserver
 
-    if not moduleName:
+    if not module_name:
         return
 
     factory = None
     try:
-        factory = importlib.import_module('orca.%s' % moduleName)
-    except:
+        factory = importlib.import_module(f'orca.{module_name}')
+    except Exception:
         try:
-            factory = importlib.import_module(moduleName)
-        except:
-            debug.printException(debug.LEVEL_SEVERE)
+            factory = importlib.import_module(module_name)
+        except Exception:
+            debug.print_exception(debug.LEVEL_SEVERE)
 
     # Now, get the speech server we care about.
     #
-    speechServerInfo = settings.speechServerInfo
-    if speechServerInfo:
-        _speechserver = factory.SpeechServer.getSpeechServer(speechServerInfo)
+    speech_server_info = settings.speechServerInfo
+    if speech_server_info:
+        _speechserver = factory.SpeechServer.get_speech_server(speech_server_info)
 
     if not _speechserver:
-        _speechserver = factory.SpeechServer.getSpeechServer()
-        if speechServerInfo:
-            msg = 'SPEECH: Invalid speechServerInfo: %s' % speechServerInfo
-            debug.println(debug.LEVEL_INFO, msg, True)
+        _speechserver = factory.SpeechServer.get_speech_server()
+        if speech_server_info:
+            tokens = ["SPEECH: Invalid speechServerInfo:", speech_server_info]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
     if not _speechserver:
-        raise Exception("ERROR: No speech server for factory: %s" % moduleName)
+        raise RuntimeError(f"ERROR: No speech server for factory: {module_name}")
 
 def init():
-    debug.println(debug.LEVEL_INFO, 'SPEECH: Initializing', True)
+    """Initializes the speech server."""
+
+    debug.print_message(debug.LEVEL_INFO, 'SPEECH: Initializing', True)
     if _speechserver:
-        debug.println(debug.LEVEL_INFO, 'SPEECH: Already initialized', True)
+        debug.print_message(debug.LEVEL_INFO, 'SPEECH: Already initialized', True)
         return
 
+    # HACK: Orca goes to incredible lengths to avoid a broken configuration, so this
+    #       last-chance override exists to get the speech system loaded, without risking
+    #       it being written to disk unintentionally.
+    if settings.speechSystemOverride:
+        setattr(settings, 'speechServerFactory', settings.speechSystemOverride)
+        setattr(settings, 'speechServerInfo', ['Default Synthesizer', 'default'])
+
     try:
-        moduleName = settings.speechServerFactory
-        _initSpeechServer(moduleName,
-                          settings.speechServerInfo)
-    except:
-        moduleNames = settings.speechFactoryModules
-        for moduleName in moduleNames:
-            if moduleName != settings.speechServerFactory:
+        module_name = settings.speechServerFactory
+        _init_speech_server(module_name, settings.speechServerInfo)
+    except Exception:
+        module_names = settings.speechFactoryModules
+        for module_name in module_names:
+            if module_name != settings.speechServerFactory:
                 try:
-                    _initSpeechServer(moduleName, None)
+                    _init_speech_server(module_name, None)
                     if _speechserver:
                         break
-                except:
-                    debug.printException(debug.LEVEL_SEVERE)
+                except Exception:
+                    debug.print_exception(debug.LEVEL_SEVERE)
 
     if _speechserver:
-        msg = 'SPEECH: Using speech server factory: %s' % moduleName
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["SPEECH: Using speech server factory:", module_name]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
     else:
         msg = 'SPEECH: Not available'
-        debug.println(debug.LEVEL_INFO, msg, True)
+        debug.print_message(debug.LEVEL_INFO, msg, True)
 
-    debug.println(debug.LEVEL_INFO, 'SPEECH: Initialized', True)
+    debug.print_message(debug.LEVEL_INFO, 'SPEECH: Initialized', True)
 
-def checkSpeechSetting():
-    msg = "SPEECH: Checking speech setting."
-    debug.println(debug.LEVEL_INFO, msg, True)
-
-    if not settings.enableSpeech:
-        shutdown()
-    else:
-        init()
-
-def __resolveACSS(acss=None):
+def __resolve_acss(acss=None):
     if isinstance(acss, ACSS):
         family = acss.get(acss.FAMILY)
         try:
             family = VoiceFamily(family)
-        except:
+        except Exception:
             family = VoiceFamily({})
         acss[acss.FAMILY] = family
         return acss
-    elif isinstance(acss, list) and len(acss) == 1:
+    if isinstance(acss, list) and len(acss) == 1:
         return ACSS(acss[0])
-    else:
-        voices = settings.voices
-        return ACSS(voices[settings.DEFAULT_VOICE])
+    if isinstance(acss, dict):
+        return ACSS(acss)
+    voices = settings.voices
+    return ACSS(voices[settings.DEFAULT_VOICE])
 
-def sayAll(utteranceIterator, progressCallback):
+def say_all(utterance_iterator, progress_callback):
+    """Speaks each item in the utterance_iterator."""
+
     if settings.silenceSpeech:
         return
     if _speechserver:
-        _speechserver.sayAll(utteranceIterator, progressCallback)
+        _speechserver.say_all(utterance_iterator, progress_callback)
     else:
-        for [context, acss] in utteranceIterator:
-            logLine = "SPEECH OUTPUT: '" + context.utterance + "'"
-            debug.println(debug.LEVEL_INFO, logLine, True)
-            log.info(logLine)
+        for [context, _acss] in utterance_iterator:
+            log_line = f"SPEECH OUTPUT: '{context.utterance}'"
+            debug.print_message(debug.LEVEL_INFO, log_line, True)
 
 def _speak(text, acss, interrupt):
     """Speaks the individual string using the given ACSS."""
 
-    logLine = "SPEECH OUTPUT: '" + text + "'"
-    extraDebug = ""
-    if acss in list(settings.voices.values()):
-        for key in settings.voices:
-            if acss == settings.voices[key]:
-                if key != settings.DEFAULT_VOICE:
-                    extraDebug = " voice=%s" % key
-                break
+    if not _speechserver:
+        log_line = f"SPEECH OUTPUT: '{text}' {acss}"
+        debug.print_message(debug.LEVEL_INFO, log_line, True)
+        return
 
-    debug.println(debug.LEVEL_INFO, logLine + extraDebug + str(acss), True)
-    log.info(logLine + extraDebug)
+    voice = ACSS(settings.voices.get(settings.DEFAULT_VOICE))
+    try:
+        voice.update(__resolve_acss(acss))
+    except Exception as error:
+        msg = f"SPEECH: Exception updated voice with {acss}: {error}"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
 
-    if _speechserver:
-        voice = ACSS(settings.voices.get(settings.DEFAULT_VOICE))
-        try:
-            voice.update(__resolveACSS(acss))
-        except:
-            pass
-        _speechserver.speak(text, __resolveACSS(voice), interrupt)
+    resolved_voice = __resolve_acss(voice)
+    msg = f"SPEECH OUTPUT: '{text}' {resolved_voice}"
+    debug.print_message(debug.LEVEL_INFO, msg, True)
+    _speechserver.speak(text, resolved_voice, interrupt)
 
 def speak(content, acss=None, interrupt=True):
     """Speaks the given content.  The content can be either a simple
@@ -193,206 +165,97 @@ def speak(content, acss=None, interrupt=True):
     if settings.silenceSpeech:
         return
 
-    validTypes = (str, list, speech_generator.Pause,
-                  speech_generator.LineBreak, ACSS)
-    error = "SPEECH: bad content sent to speak(): '%s'"
-    if not isinstance(content, validTypes):
-        debug.printStack(debug.LEVEL_WARNING)
-        debug.println(debug.LEVEL_WARNING, error % content, True)
+    valid_types = (str, list, speech_generator.Pause, ACSS)
+    error = "SPEECH: Bad content sent to speak():"
+    if not isinstance(content, valid_types):
+        debug.print_message(debug.LEVEL_INFO, error + str(content), True, True)
         return
 
-    global _timestamp
-    if _timestamp:
-        msg = "SPEECH: Last spoke %.4f seconds ago" % (time.time() - _timestamp)
-        debug.println(debug.LEVEL_INFO, msg, True)
-    _timestamp = time.time()
+    if isinstance(content, str):
+        msg = f"SPEECH: Speak '{content}' acss: {acss}"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+    else:
+        tokens = ["SPEECH: Speak", content, ", acss:", acss]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
 
     if isinstance(content, str):
         _speak(content, acss, interrupt)
     if not isinstance(content, list):
         return
 
-    toSpeak = []
-    activeVoice = ACSS(acss)
+    to_speak = []
+    active_voice = acss
+    if acss is not None:
+        active_voice = ACSS(acss)
+
     for element in content:
-        if not isinstance(element, validTypes):
-            debug.println(debug.LEVEL_WARNING, error % element, True)
+        if not isinstance(element, valid_types):
+            debug.print_message(debug.LEVEL_INFO, error + str(element), True, True)
         elif isinstance(element, list):
             speak(element, acss, interrupt)
         elif isinstance(element, str):
             if len(element):
-                toSpeak.append(element)
-        elif toSpeak:
-            newVoice = ACSS(acss)
-            newItemsToSpeak = []
+                to_speak.append(element)
+        elif to_speak:
+            new_voice = ACSS(acss)
+            new_items_to_speak = []
             if isinstance(element, speech_generator.Pause):
-                if toSpeak[-1] and toSpeak[-1][-1].isalnum():
-                    toSpeak[-1] += '.'
+                if to_speak[-1] and to_speak[-1][-1].isalnum():
+                    to_speak[-1] += '.'
             elif isinstance(element, ACSS):
-                newVoice.update(element)
-                if newVoice == activeVoice:
+                new_voice.update(element)
+                if active_voice is None:
+                    active_voice = new_voice
+                if new_voice == active_voice:
                     continue
-                newItemsToSpeak.append(toSpeak.pop())
+                tokens = ["SPEECH: New voice", new_voice, " != active voice", active_voice]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+                new_items_to_speak.append(to_speak.pop())
 
-            if toSpeak:
-                string = " ".join(toSpeak)
-                _speak(string, activeVoice, interrupt)
-            activeVoice = newVoice
-            toSpeak = newItemsToSpeak
+            if to_speak:
+                string = " ".join(to_speak)
+                _speak(string, active_voice, interrupt)
+            active_voice = new_voice
+            to_speak = new_items_to_speak
 
-    if toSpeak:
-        string = " ".join(toSpeak)
-        _speak(string, activeVoice, interrupt)
+    if to_speak:
+        string = " ".join(to_speak)
+        _speak(string, active_voice, interrupt)
 
-def speakKeyEvent(event, acss=None):
-    """Speaks a key event immediately.
-
-    Arguments:
-    - event: input_event.KeyboardEvent to speak.
-    """
+def speak_key_event(event, acss=None):
+    """Speaks event immediately using the voice specified by acss."""
 
     if settings.silenceSpeech:
         return
 
-    keyname = event.getKeyName()
-    lockingStateString = event.getLockingStateString()
-    acss = __resolveACSS(acss)
-    msg = "%s %s" % (keyname, lockingStateString)
-    logLine = "SPEECH OUTPUT: '%s' %s" % (msg, acss)
-    debug.println(debug.LEVEL_INFO, logLine, True)
-    log.info(logLine)
-
+    key_name = event.get_key_name()
+    acss = __resolve_acss(acss)
+    msg = f"{key_name} {event.get_locking_state_string()}"
+    log_line = f"SPEECH OUTPUT: '{msg.strip()}' {acss}"
+    debug.print_message(debug.LEVEL_INFO, log_line, True)
     if _speechserver:
-        _speechserver.speakKeyEvent(event, acss)
+        _speechserver.speak_key_event(event, acss)
 
-def speakCharacter(character, acss=None):
-    """Speaks a single character immediately.
+def speak_character(character, acss=None):
+    """Speaks character immediately using the voice specified by acss."""
 
-    Arguments:
-    - character: text to be spoken
-    - acss:      acss.ACSS instance; if None,
-                 the default voice settings will be used.
-                 Otherwise, the acss settings will be
-                 used to augment/override the default
-                 voice settings.
-    """
     if settings.silenceSpeech:
         return
 
-    acss = __resolveACSS(acss)
-    msg = "SPEECH OUTPUT: '" + character + "' " + str(acss)
-    debug.println(debug.LEVEL_INFO, msg, True)
-    log.info("SPEECH OUTPUT: '%s'" % character)
-
+    acss = __resolve_acss(acss)
+    log_line = f"SPEECH OUTPUT: '{character}'"
+    tokens = [log_line, acss]
+    debug.print_tokens(debug.LEVEL_INFO, tokens, True)
     if _speechserver:
-        _speechserver.speakCharacter(character, acss=acss)
+        _speechserver.speak_character(character, acss=acss)
 
-def isSpeaking():
-    """Returns True if the system is currently speaking."""
-    if _speechserver:
-        return _speechserver.isSpeaking()
-    else:
-        return False
+def get_speech_server():
+    """Returns the current speech server."""
 
-def getInfo():
-    info = None
-    if _speechserver:
-        info = _speechserver.getInfo()
+    return _speechserver
 
-    return info
+def deprecated_clear_server():
+    """This is a sad workaround for the current global _speechserver."""
 
-def stop():
-    if _speechserver:
-        _speechserver.stop()
-
-def updateCapitalizationStyle(script=None, inputEvent=None):
-    if _speechserver:
-        _speechserver.updateCapitalizationStyle()
-
-    return True
-
-def updatePunctuationLevel(script=None, inputEvent=None):
-    """ Punctuation level changed, inform this speechServer. """
-
-    if _speechserver:
-        _speechserver.updatePunctuationLevel()
-
-    return True
-
-def increaseSpeechRate(script=None, inputEvent=None):
-    if _speechserver:
-        _speechserver.increaseSpeechRate()
-
-    return True
-
-def decreaseSpeechRate(script=None, inputEvent=None):
-    if _speechserver:
-        _speechserver.decreaseSpeechRate()
-    else:
-        logLine = "SPEECH OUTPUT: 'slower'"
-        debug.println(debug.LEVEL_INFO, logLine)
-        log.info(logLine)
-
-    return True
-
-def increaseSpeechPitch(script=None, inputEvent=None):
-    if _speechserver:
-        _speechserver.increaseSpeechPitch()
-
-    return True
-
-def decreaseSpeechPitch(script=None, inputEvent=None):
-    if _speechserver:
-        _speechserver.decreaseSpeechPitch()
-
-    return True
-
-def increaseSpeechVolume(script=None, inputEvent=None):
-    if _speechserver:
-        _speechserver.increaseSpeechVolume()
-    return True
-
-def decreaseSpeechVolume(script=None, inputEvent=None):
-    if _speechserver:
-        _speechserver.decreaseSpeechVolume()
-    return True
-
-def shutdown():
-    debug.println(debug.LEVEL_INFO, 'SPEECH: Shutting down', True)
     global _speechserver
-    if _speechserver:
-        _speechserver.shutdownActiveServers()
-        _speechserver = None
-
-def reset(text=None, acss=None):
-    if _speechserver:
-        _speechserver.reset(text, acss)
-
-def testNoSettingsInit():
-    init()
-    speak("testing")
-    speak("this is higher", ACSS({'average-pitch' : 7}))
-    speak("this is slower", ACSS({'rate' : 3}))
-    speak("this is faster", ACSS({'rate' : 80}))
-    speak("this is quiet",  ACSS({'gain' : 2}))
-    speak("this is loud",   ACSS({'gain' : 10}))
-    speak("this is normal")
-
-def test():
-    from . import speechserver
-    factories = getSpeechServerFactories()
-    for factory in factories:
-        print(factory.__name__)
-        servers = factory.SpeechServer.getSpeechServers()
-        for server in servers:
-            try:
-                print("    ", server.getInfo())
-                for family in server.getVoiceFamilies():
-                    name = family[speechserver.VoiceFamily.NAME]
-                    print("      ", name)
-                    acss = ACSS({ACSS.FAMILY : family})
-                    server.speak(name, acss)
-                    server.speak("testing")
-                server.shutdown()
-            except:
-                debug.printException(debug.LEVEL_OFF)
+    _speechserver = None

@@ -27,51 +27,25 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2014 Igalia, S.L."
 __license__   = "LGPL"
 
-import pyatspi
-import orca.spellcheck as spellcheck
+from orca import spellcheck
+from orca.ax_object import AXObject
+from orca.ax_utilities import AXUtilities
+
 
 class SpellCheck(spellcheck.SpellCheck):
+    """Customized support for spellcheck in Gedit."""
 
-    def __init__(self, script):
-        super(SpellCheck, self).__init__(script)
-
-    def _isCandidateWindow(self, window):
+    def _is_candidate_window(self, window):
         if not window:
             return False
 
-        role = window.getRole()
-        if role == pyatspi.ROLE_DIALOG:
+        if AXUtilities.is_dialog(window):
             return True
-        if role != pyatspi.ROLE_FRAME:
+
+        if not AXUtilities.is_frame(window):
             return False
 
-        isSplitPane = lambda x: x and x.getRole() == pyatspi.ROLE_SPLIT_PANE
-        if pyatspi.findDescendant(window, isSplitPane):
+        if AXObject.find_descendant(window, AXUtilities.is_split_pane):
             return False
 
         return True
-
-    def _findChangeToEntry(self, root):
-        isEntry = lambda x: x and x.getRole() == pyatspi.ROLE_TEXT \
-                  and x.getState().contains(pyatspi.STATE_SINGLE_LINE)
-        return pyatspi.findDescendant(root, isEntry)
-
-    def _findErrorWidget(self, root):
-        isPanel = lambda x: x and x.getRole() == pyatspi.ROLE_PANEL
-        panel = pyatspi.findAncestor(self._changeToEntry, isPanel)
-        if not panel:
-            return None
-
-        isError = lambda x: x and x.getRole() == pyatspi.ROLE_LABEL \
-                  and not ":" in x.name and not x.getRelationSet()
-        return pyatspi.findDescendant(panel, isError)
-
-    def _findSuggestionsList(self, root):
-        isTable = lambda x: x and x.getRole() == pyatspi.ROLE_TABLE \
-                  and 'Selection' in x.get_interfaces()
-        return pyatspi.findDescendant(root, isTable)
-
-    def _getSuggestionIndexAndPosition(self, suggestion):
-        index, total = self._script.utilities.getPositionAndSetSize(suggestion)
-        total -= 1
-        return index, total

@@ -25,35 +25,41 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2005-2009 Sun Microsystems Inc."
 __license__   = "LGPL"
 
+import gi
+gi.require_version("Atspi", "2.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("Gtk", "3.0")
+from gi.repository import Atspi
+
 import os
 from gi.repository import Gdk
 from gi.repository import GLib
 from gi.repository import Gtk
 from gi.repository import GObject
 from gi.repository import Pango
-import pyatspi
 import time
 
 from . import acss
 from . import debug
+from . import event_manager
 from . import guilabels
 from . import messages
 from . import orca
 from . import orca_gtkbuilder
 from . import orca_gui_profile
-from . import orca_state
 from . import orca_platform
+from . import script_manager
 from . import settings
 from . import settings_manager
 from . import input_event
+from . import input_event_manager
 from . import keybindings
 from . import pronunciation_dict
 from . import braille
-from . import speech
+from . import speech_and_verbosity_manager
 from . import speechserver
-from . import text_attribute_names
-
-_settingsManager = settings_manager.getManager()
+from .ax_object import AXObject
+from .ax_text import AXText, AXTextAttribute
 
 try:
     import louis
@@ -91,22 +97,19 @@ if louis and not tablesdir:
 
 class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
 
-    def __init__(self, fileName, windowName, prefsDict):
-        """Initialize the Orca configuration GUI.
+    DIALOG = None
 
-        Arguments:
-        - fileName: name of the GtkBuilder file.
-        - windowName: name of the component to get from the GtkBuilder file.
-        - prefsDict: dictionary of preferences to use during initialization
-        """
+    def __init__(self, script, prefsDict):
+        """Initialize the Orca configuration GUI."""
 
-        orca_gtkbuilder.GtkBuilderWrapper.__init__(self, fileName, windowName)
+        if OrcaSetupGUI.DIALOG is not None:
+            return
+
+        fileName = os.path.join(orca_platform.datadir, orca_platform.package, "ui","orca-setup.ui")
+        orca_gtkbuilder.GtkBuilderWrapper.__init__(self, fileName, "orcaSetupWindow")
         self.prefsDict = prefsDict
 
         self._defaultProfile = ['Default', 'default']
-
-        # Initialize variables to None to keep pylint happy.
-        #
         self.bbindings = None
         self.cellRendererText = None
         self.defaultVoice = None
@@ -151,22 +154,24 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         self.profilesComboModel = None
         self.startingProfileCombo = None
         self._capturedKey = []
-        self.script = None
+        self.script = script
+        self.init()
 
-    def init(self, script):
+    def init(self):
         """Initialize the Orca configuration GUI. Read the users current
         set of preferences and set the GUI state to match. Setup speech
         support and populate the combo box lists on the Speech Tab pane
         accordingly.
         """
 
-        self.script = script
+        if OrcaSetupGUI.DIALOG is not None:
+            return
 
         # Restore the default rate/pitch/gain,
         # in case the user played with the sliders.
         #        
         try:
-            voices = _settingsManager.getSetting('voices')
+            voices = settings_manager.get_manager().get_setting('voices')
             defaultVoice = voices[settings.DEFAULT_VOICE]
         except KeyError:
             defaultVoice = {}
@@ -351,11 +356,11 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
 
         # TODO - JD: Will this ever be the case??
         self._isInitialSetup = \
-            not os.path.exists(_settingsManager.getPrefsDir())
+            not os.path.exists(settings_manager.get_manager().get_prefs_dir())
 
-        appPage = self.script.getAppPreferencesGUI()
+        appPage = self.script.get_app_preferences_gui()
         if appPage:
-            label = Gtk.Label(label=self.script.app.name)
+            label = Gtk.Label(label=AXObject.get_name(self.script.app))
             self.get_widget("notebook").append_page(appPage, label)
 
         self._initGUIState()
@@ -385,13 +390,13 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
     def writeUserPreferences(self):
         """Write out the user's generic Orca preferences.
         """
+        settings.speechSystemOverride = None
         pronunciationDict = self.getModelDict(self.pronunciationModel)
         keyBindingsDict = self.getKeyBindingsModelDict(self.keyBindingsModel)
-        self.prefsDict.update(self.script.getPreferencesFromGUI())
-        _settingsManager.saveSettings(self.script,
-                                      self.prefsDict,
-                                      pronunciationDict,
-                                      keyBindingsDict)
+
+        self.prefsDict.update(self.script.get_preferences_from_gui())
+        settings_manager.get_manager().save_settings(
+            self.script, self.prefsDict, pronunciationDict, keyBindingsDict)
 
     def _getKeyValueForVoiceType(self, voiceType, key, useDefault=True):
         """Look for the value of the given key in the voice dictionary
@@ -638,9 +643,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
                 break
 
         if not languageSet:
-            debug.println(debug.LEVEL_FINEST,
-                          "Could not find speech language match for %s" \
-                          % familyName)
+            tokens = ["PREFERENCES DIALOG: Could not find speech language match for", familyName]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             self.get_widget("speechLanguages").set_active(0)
             self.speechLanguagesChoice = self.speechLanguagesChoices[0]
 
@@ -648,9 +652,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             self.selectedLanguageChoices[self.speechServersChoice] = i
 
         if not familySet:
-            debug.println(debug.LEVEL_FINEST,
-                          "Could not find speech family match for %s" \
-                          % familyName)
+            tokens = ["PREFERENCES DIALOG: Could not find speech family match for", familyName]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             self.get_widget("speechFamilies").set_active(0)
             self.speechFamiliesChoice = self.speechFamiliesChoices[0]
 
@@ -666,6 +669,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         GtkComboBox list.
         """
 
+        combobox = self.get_widget("speechFamilies")
+        combobox.set_model(None)
         self.speechFamiliesModel.clear()
 
         currentLanguage = self.speechLanguagesChoice
@@ -689,9 +694,10 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             self.speechFamiliesModel.append((i, name))
             i += 1
 
+        combobox.set_model(self.speechFamiliesModel)
         if i == 0:
-            debug.println(debug.LEVEL_SEVERE, "No speech family was available for %s." % str(currentLanguage))
-            debug.printStack(debug.LEVEL_FINEST)
+            tokens = ["No speech family was available for", str(currentLanguage), "."]
+            debug.print_tokens(debug.LEVEL_SEVERE, tokens, True, True)
             self.speechFamiliesChoice = None
             return
 
@@ -715,8 +721,6 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         - languageName: the language name to use to set the active combo box item.
         """
 
-        print("setSpeechLanguagesChoice")
-
         if len(self.speechLanguagesChoices) == 0:
             return
 
@@ -731,9 +735,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             i += 1
 
         if not valueSet:
-            debug.println(debug.LEVEL_FINEST,
-                          "Could not find speech language match for %s" \
-                          % languageName)
+            tokens = ["PREFERENCES DIALOG: Could not find speech language match for", languageName]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             self.get_widget("speechLanguages").set_active(0)
             self.speechLanguagesChoice = self.speechLanguagesChoices[0]
 
@@ -749,15 +752,15 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         GtkComboBox list.
         """
 
+        combobox = self.get_widget("speechLanguages")
+        combobox.set_model(None)
         self.speechLanguagesModel.clear()
-
         self.speechFamilies = self.speechServersChoice.getVoiceFamilies()
-
         self.speechLanguagesChoices = []
 
         if len(self.speechFamilies) == 0:
-            debug.println(debug.LEVEL_SEVERE, "No speech voice was available.")
-            debug.printStack(debug.LEVEL_FINEST)
+            include_stack = debug.debugLevel >= debug.LEVEL_INFO
+            debug.print_message(debug.LEVEL_SEVERE, "No voice available.", True, include_stack)
             self.speechLanguagesChoice = None
             return
 
@@ -792,6 +795,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         selectedIndex = 0
         if self.speechServersChoice in self.selectedLanguageChoices:
             selectedIndex = self.selectedLanguageChoices[self.speechServersChoice]
+
+        combobox.set_model(self.speechLanguagesModel)
 
         self.get_widget("speechLanguages").set_active(selectedIndex)
         if self.initializingSpeech:
@@ -829,13 +834,13 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         # We'll fallback to whatever we happen to be using in the event
         # that this preference has never been set.
         #
-        if not serverInfo:
-            serverInfo = speech.getInfo()
+        if not (serverInfo and serverInfo[0]):
+            serverInfo = speech_and_verbosity_manager.get_manager().get_current_speech_server_info()
 
         valueSet = False
         i = 0
         for server in self.speechServersChoices:
-            if serverInfo == server.getInfo():
+            if serverInfo == server.get_info():
                 self.get_widget("speechServers").set_active(i)
                 self.speechServersChoice = server
                 valueSet = True
@@ -843,9 +848,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             i += 1
 
         if not valueSet:
-            debug.println(debug.LEVEL_FINEST,
-                          "Could not find speech server match for %s" \
-                          %  repr(serverInfo))
+            tokens = ["PREFERENCES DIALOG: Could not find speech server match for", serverInfo]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             self.get_widget("speechServers").set_active(0)
             self.speechServersChoice = self.speechServersChoices[0]
 
@@ -858,31 +862,33 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         GtkComboBox list.  Set the current choice to be the first item.
         """
 
+        combobox = self.get_widget("speechServers")
+        combobox.set_model(None)
         self.speechServersModel.clear()
         self.speechServersChoices = \
                 self.speechSystemsChoice.SpeechServer.getSpeechServers()
         if len(self.speechServersChoices) == 0:
-            debug.println(debug.LEVEL_SEVERE, "Speech not available.")
-            debug.printStack(debug.LEVEL_FINEST)
+            include_stack = debug.debugLevel >= debug.LEVEL_INFO
+            debug.print_message(debug.LEVEL_SEVERE, "Speech not available.", True, include_stack)
             self.speechServersChoice = None
             self.speechLanguagesChoices = []
             self.speechLanguagesChoice = None
             self.speechFamiliesChoices = []
             self.speechFamiliesChoice = None
+            combobox.set_model(self.speechServersModel)
             return
 
         i = 0
         for server in self.speechServersChoices:
-            name = server.getInfo()[0]
+            name = server.get_info()[0]
             self.speechServersModel.append((i, name))
             i += 1
 
-        self._setSpeechServersChoice(self.prefsDict["speechServerInfo"])
-
-        debug.println(
-            debug.LEVEL_FINEST,
-            "orca_gui_prefs._setupSpeechServers: speechServersChoice: %s" \
-            % self.speechServersChoice.getInfo())
+        combobox.set_model(self.speechServersModel)
+        if settings.speechSystemOverride:
+            self._setSpeechServersChoice([guilabels.DEFAULT_SYNTHESIZER, 'default'])
+        else:
+            self._setSpeechServersChoice(self.prefsDict["speechServerInfo"])
 
     def _setSpeechSystemsChoice(self, systemName):
         """Set the active item in the speech systems combo box to the
@@ -912,9 +918,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             i += 1
 
         if not valueSet:
-            debug.println(debug.LEVEL_FINEST,
-                          "Could not find speech system match for %s" \
-                          % systemName)
+            tokens = ["PREFERENCES DIALOG: Could not find speech system match for", systemName]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             self.get_widget("speechSystems").set_active(0)
             self.speechSystemsChoice = self.speechSystemsChoices[0]
 
@@ -927,6 +932,9 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         Arguments:
         -factories: the list of known speech factories (working or not)
         """
+
+        combobox = self.get_widget("speechSystems")
+        combobox.set_model(None)
         self.speechSystemsModel.clear()
         self.workingFactories = []
         for factory in factories:
@@ -934,13 +942,13 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
                 servers = factory.SpeechServer.getSpeechServers()
                 if len(servers):
                     self.workingFactories.append(factory)
-            except:
-                debug.printException(debug.LEVEL_FINEST)
+            except Exception:
+                debug.print_exception(debug.LEVEL_INFO)
 
         self.speechSystemsChoices = []
         if len(self.workingFactories) == 0:
-            debug.println(debug.LEVEL_SEVERE, "Speech not available.")
-            debug.printStack(debug.LEVEL_FINEST)
+            include_stack = debug.debugLevel >= debug.LEVEL_INFO
+            debug.print_message(debug.LEVEL_SEVERE, "Speech not available.", True, include_stack)
             self.speechSystemsChoice = None
             self.speechServersChoices = []
             self.speechServersChoice = None
@@ -948,6 +956,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             self.speechLanguagesChoice = None
             self.speechFamiliesChoices = []
             self.speechFamiliesChoice = None
+            combobox.set_model(self.speechSystemsModel)
             return
 
         i = 0
@@ -957,15 +966,13 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             self.speechSystemsModel.append((i, name))
             i += 1
 
-        if self.prefsDict["speechServerFactory"]:
+        combobox.set_model(self.speechSystemsModel)
+        if settings.speechSystemOverride:
+            self._setSpeechSystemsChoice(settings.speechSystemOverride)
+        elif self.prefsDict["speechServerFactory"]:
             self._setSpeechSystemsChoice(self.prefsDict["speechServerFactory"])
         else:
             self.speechSystemsChoice = None
-
-        debug.println(
-            debug.LEVEL_FINEST,
-            "orca_gui_prefs._setupSpeechSystems: speechSystemsChoice: %s" \
-            % self.speechSystemsChoice)
 
     def _initSpeechState(self):
         """Initialize the various speech components.
@@ -986,7 +993,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         #
         # Where * = speechSystems, speechServers, speechLanguages, speechFamilies
         #
-        factories = speech.getSpeechServerFactories()
+        factories = settings_manager.get_manager().get_speech_server_factories()
         if len(factories) == 0 or not self.prefsDict.get('enableSpeech', True):
             self.workingFactories = []
             self.speechSystemsChoice = None
@@ -998,18 +1005,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             self.speechFamiliesChoice = None
             return
 
-        try:
-            speech.init()
-        except:
-            self.workingFactories = []
-            self.speechSystemsChoice = None
-            self.speechServersChoices = []
-            self.speechServersChoice = None
-            self.speechLanguagesChoices = []
-            self.speechLanguagesChoice = None
-            self.speechFamiliesChoices = []
-            self.speechFamiliesChoice = None
-            return
+        speech_and_verbosity_manager.get_manager().start_speech()
 
         # This cascades into systems->servers->voice_type->families...
         #
@@ -1017,8 +1013,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         self._setupSpeechSystems(factories)
         self.initializingSpeech = False
 
-    def _setSpokenTextAttributes(self, view, setAttributes,
-                                 state, moveToTop=False):
+    def _setSpokenTextAttributes(self, view, setAttributes, state, moveToTop=False):
         """Given a set of spoken text attributes, update the model used by the
         text attribute tree view.
 
@@ -1031,27 +1026,25 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
 
         model = view.get_model()
         view.set_model(None)
-
-        [attrList, attrDict] = \
-           self.script.utilities.stringToKeysAndDict(setAttributes)
-        [allAttrList, allAttrDict] = self.script.utilities.stringToKeysAndDict(
-            _settingsManager.getSetting('allTextAttributes'))
-
-        for i in range(0, len(attrList)):
-            for path in range(0, len(allAttrList)):
-                localizedKey = text_attribute_names.getTextAttributeName(
-                    attrList[i], self.script)
-                localizedValue = text_attribute_names.getTextAttributeName(
-                    attrDict[attrList[i]], self.script)
+        allAttrList = AXText.get_all_supported_text_attributes()
+        for i, key in enumerate(setAttributes):
+            for path in range(len(allAttrList)):
+                attribute = AXTextAttribute.from_string(key)
+                if attribute is None:
+                    continue
+                localizedKey = attribute.get_localized_name()
                 if localizedKey == model[path][NAME]:
                     thisIter = model.get_iter(path)
                     model.set_value(thisIter, NAME, localizedKey)
                     model.set_value(thisIter, IS_SPOKEN, state)
-                    model.set_value(thisIter, VALUE, localizedValue)
                     if moveToTop:
-                        thisIter = model.get_iter(path)
-                        otherIter = model.get_iter(i)
-                        model.move_before(thisIter, otherIter)
+                        try:
+                            thisIter = model.get_iter(path)
+                            otherIter = model.get_iter(i)
+                        except ValueError:
+                            pass
+                        else:
+                            model.move_before(thisIter, otherIter)
                     break
 
         view.set_model(model)
@@ -1068,16 +1061,13 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
 
         model = view.get_model()
         view.set_model(None)
-
-        [attrList, attrDict] = \
-            self.script.utilities.stringToKeysAndDict(setAttributes)
-        [allAttrList, allAttrDict] = self.script.utilities.stringToKeysAndDict(
-                _settingsManager.getSetting('allTextAttributes'))
-
-        for i in range(0, len(attrList)):
-            for path in range(0, len(allAttrList)):
-                localizedKey = text_attribute_names.getTextAttributeName(
-                    attrList[i], self.script)
+        allAttrList = AXText.get_all_supported_text_attributes()
+        for key in setAttributes:
+            for path in range(len(allAttrList)):
+                attribute = AXTextAttribute.from_string(key)
+                if attribute is None:
+                    continue
+                localizedKey = attribute.get_localized_name()
                 if localizedKey == model[path][NAME]:
                     thisIter = model.get_iter(path)
                     model.set_value(thisIter, IS_BRAILLED, state)
@@ -1085,51 +1075,29 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
 
         view.set_model(model)
 
-    def _getAppNameForAttribute(self, attributeName):
-        """Converts the given Atk attribute name into the application's
-        equivalent. This is necessary because an application or toolkit
-        (e.g. Gecko) might invent entirely new names for the same text
-        attributes.
-
-        Arguments:
-        - attribName: The name of the text attribute
-
-        Returns the application's equivalent name if found or attribName
-        otherwise.
-        """
-
-        return self.script.utilities.getAppNameForAttribute(attributeName)
-
     def _updateTextDictEntry(self):
         """The user has updated the text attribute list in some way. Update
-        the "enabledSpokenTextAttributes" and "enabledBrailledTextAttributes"
-        preference strings to reflect the current state of the corresponding
+        the preferences to reflect the current state of the corresponding
         text attribute lists.
         """
 
         model = self.getTextAttributesView.get_model()
-        spokenAttrStr = ""
-        brailledAttrStr = ""
+        spoken_attributes = []
+        brailled_attributes = []
         noRows = model.iter_n_children(None)
         for path in range(0, noRows):
             localizedKey = model[path][NAME]
-            key = text_attribute_names.getTextAttributeKey(localizedKey)
-
-            # Convert the normalized, Atk attribute name back into what
-            # the app/toolkit uses.
-            #
-            key = self._getAppNameForAttribute(key)
-
-            localizedValue = model[path][VALUE]
-            value = text_attribute_names.getTextAttributeKey(localizedValue)
-
+            attribute = AXTextAttribute.from_localized_string(localizedKey)
+            if attribute is None:
+                continue
+            key = attribute.get_attribute_name()
             if model[path][IS_SPOKEN]:
-                spokenAttrStr += key + ":" + value + "; "
+                spoken_attributes.append(key)
             if model[path][IS_BRAILLED]:
-                brailledAttrStr += key + ":" + value + "; "
+                brailled_attributes.append(key)
 
-        self.prefsDict["enabledSpokenTextAttributes"] = spokenAttrStr
-        self.prefsDict["enabledBrailledTextAttributes"] = brailledAttrStr
+        self.prefsDict["textAttributesToSpeak"] = spoken_attributes
+        self.prefsDict["textAttributesToBraille"] = brailled_attributes
 
     def contractedBrailleToggled(self, checkbox):
         grid = self.get_widget('contractionTableGrid')
@@ -1149,7 +1117,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
     def textAttributeSpokenToggled(self, cell, path, model):
         """The user has toggled the state of one of the text attribute
         checkboxes to be spoken. Update our model to reflect this, then
-        update the "enabledSpokenTextAttributes" preference string.
+        update the preference.
 
         Arguments:
         - cell: the cell that changed.
@@ -1164,7 +1132,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
     def textAttributeBrailledToggled(self, cell, path, model):
         """The user has toggled the state of one of the text attribute
         checkboxes to be brailled. Update our model to reflect this,
-        then update the "enabledBrailledTextAttributes" preference string.
+        then update the preference.
 
         Arguments:
         - cell: the cell that changed.
@@ -1174,23 +1142,6 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
 
         thisIter = model.get_iter(path)
         model.set(thisIter, IS_BRAILLED, not model[path][IS_BRAILLED])
-        self._updateTextDictEntry()
-
-    def textAttrValueEdited(self, cell, path, new_text, model):
-        """The user has edited the value of one of the text attributes.
-        Update our model to reflect this, then update the
-        "enabledSpokenTextAttributes" and "enabledBrailledTextAttributes"
-        preference strings.
-
-        Arguments:
-        - cell: the cell that changed.
-        - path: the path of that cell.
-        - new_text: the new text attribute value string.
-        - model: the model that the cell is part of.
-        """
-
-        thisIter = model.get_iter(path)
-        model.set(thisIter, VALUE, new_text)
         self._updateTextDictEntry()
 
     def textAttrCursorChanged(self, widget):
@@ -1232,19 +1183,11 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
 
         # Initially setup the list store model based on the values of all
         # the known text attributes.
-        #
-        [allAttrList, allAttrDict] = self.script.utilities.stringToKeysAndDict(
-            _settingsManager.getSetting('allTextAttributes'))
-        for i in range(0, len(allAttrList)):
+        for attribute in AXText.get_all_supported_text_attributes():
             thisIter = model.append()
-            localizedKey = text_attribute_names.getTextAttributeName(
-                allAttrList[i], self.script)
-            localizedValue = text_attribute_names.getTextAttributeName(
-                allAttrDict[allAttrList[i]], self.script)
-            model.set_value(thisIter, NAME, localizedKey)
+            model.set_value(thisIter, NAME, attribute.get_localized_name())
             model.set_value(thisIter, IS_SPOKEN, False)
             model.set_value(thisIter, IS_BRAILLED, False)
-            model.set_value(thisIter, VALUE, localizedValue)
 
         self.getTextAttributesView.set_model(model)
 
@@ -1281,35 +1224,23 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         self.getTextAttributesView.insert_column(column, 2)
         column.clicked()
 
-        # Attribute Value column (VALUE)
-        column = Gtk.TreeViewColumn(guilabels.PRESENTATION_PRESENT_UNLESS)
-        renderer = Gtk.CellRendererText()
-        renderer.set_property('editable', True)
-        column.pack_end(renderer, True)
-        column.add_attribute(renderer, 'text', VALUE)
-        renderer.connect("edited", self.textAttrValueEdited, model)
+        # Get a dictionary of text attributes that the user cares about, falling back on the
+        # default presentable attributes if the user has not specified any.
+        attr_list = settings_manager.get_manager().get_setting("textAttributesToSpeak")
+        if not attr_list:
+            attr_list = [
+                attr.get_attribute_name()
+                for attr in AXText.get_all_supported_text_attributes()
+                if attr.should_present_by_default()
+            ]
+        self._setSpokenTextAttributes(self.getTextAttributesView, attr_list, True, True)
 
-        self.getTextAttributesView.insert_column(column, 4)
+        # For braille none should be enabled by default. So only set those the user chose.
+        attr_list = settings_manager.get_manager().get_setting("textAttributesToBraille")
+        self._setBrailledTextAttributes(self.getTextAttributesView, attr_list, True)
 
-        # Check all the enabled (spoken) text attributes.
-        #
-        self._setSpokenTextAttributes(
-            self.getTextAttributesView,
-            _settingsManager.getSetting('enabledSpokenTextAttributes'),
-            True, True)
-
-        # Check all the enabled (brailled) text attributes.
-        #
-        self._setBrailledTextAttributes(
-            self.getTextAttributesView,
-            _settingsManager.getSetting('enabledBrailledTextAttributes'),
-            True)
-
-        # Connect a handler for when the user changes columns within the
-        # view, so that we can adjust the search column for item lookups.
-        #
-        self.getTextAttributesView.connect("cursor_changed",
-                                           self.textAttrCursorChanged)
+        # TODO - JD: Is this still needed (for the purpose of the search column)?
+        self.getTextAttributesView.connect("cursor_changed", self.textAttrCursorChanged)
 
     def pronActualValueEdited(self, cell, path, new_text, model):
         """The user has edited the value of one of the actual strings in
@@ -1342,7 +1273,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
     def pronunciationFocusChange(self, widget, event, isFocused):
         """Callback for the pronunciation tree's focus-{in,out}-event signal."""
 
-        _settingsManager.setSetting('usePronunciationDictionary', not isFocused)
+        settings_manager.get_manager().set_setting('usePronunciationDictionary', not isFocused)
 
     def pronunciationCursorChanged(self, widget):
         """Set the search column in the pronunciation dictionary tree view
@@ -1381,14 +1312,14 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         #
         if not self.script.app:
             _profile = self.prefsDict.get('activeProfile')[1]
-            pronDict = _settingsManager.getPronunciations(_profile)
+            pronDict = settings_manager.get_manager().get_pronunciations(_profile)
         else:
             pronDict = pronunciation_dict.pronunciation_dict
         for pronKey in sorted(pronDict.keys()):
             thisIter = model.append() 
             try:
                 actual, replacement = pronDict[pronKey]
-            except:
+            except Exception:
                 # Try to do something sensible for the previous format of
                 # pronunciation dictionary entries. See bug #464754 for
                 # more details.
@@ -1443,51 +1374,45 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
 
         # Speech pane.
         #
-        enable = prefs["enableSpeech"]
+        enable = prefs.get("enableSpeech", settings.enableSpeech)
         self.get_widget("speechSupportCheckButton").set_active(enable)
         self.get_widget("speechOptionsGrid").set_sensitive(enable)
 
-        enable = prefs["onlySpeakDisplayedText"]
+        enable = prefs.get("onlySpeakDisplayedText", settings.onlySpeakDisplayedText)
         self.get_widget("onlySpeakDisplayedTextCheckButton").set_active(enable)
         self.get_widget("contextOptionsGrid").set_sensitive(not enable)
 
-        if prefs["verbalizePunctuationStyle"] == \
-                               settings.PUNCTUATION_STYLE_NONE:
+        style = prefs.get("verbalizePunctuationStyle", settings.verbalizePunctuationStyle)
+        if style == settings.PUNCTUATION_STYLE_NONE:
             self.get_widget("noneButton").set_active(True)
-        elif prefs["verbalizePunctuationStyle"] == \
-                               settings.PUNCTUATION_STYLE_SOME:
+        elif style == settings.PUNCTUATION_STYLE_SOME:
             self.get_widget("someButton").set_active(True)
-        elif prefs["verbalizePunctuationStyle"] == \
-                               settings.PUNCTUATION_STYLE_MOST:
+        elif style == settings.PUNCTUATION_STYLE_MOST:
             self.get_widget("mostButton").set_active(True)
         else:
             self.get_widget("allButton").set_active(True)
 
-        if prefs["speechVerbosityLevel"] == settings.VERBOSITY_LEVEL_BRIEF:
+        level = prefs.get("speechVerbosityLevel", settings.speechVerbosityLevel)
+        if level == settings.VERBOSITY_LEVEL_BRIEF:
             self.get_widget("speechBriefButton").set_active(True)
         else:
             self.get_widget("speechVerboseButton").set_active(True)
-
         self.get_widget("onlySpeakDisplayedTextCheckButton").set_active(
-            prefs["onlySpeakDisplayedText"])
-
-        self.get_widget("enableSpeechIndentationCheckButton").set_active(\
-            prefs["enableSpeechIndentation"])
-
-        self.get_widget("speakBlankLinesCheckButton").set_active(\
-            prefs["speakBlankLines"])
-        self.get_widget("speakMultiCaseStringsAsWordsCheckButton").set_active(\
-            prefs["speakMultiCaseStringsAsWords"])
+            prefs.get("onlySpeakDisplayedText", settings.onlySpeakDisplayedText))
+        self.get_widget("enableSpeechIndentationCheckButton").set_active(
+            prefs.get("enableSpeechIndentation", settings.enableSpeechIndentation))
+        self.get_widget("speakBlankLinesCheckButton").set_active(
+            prefs.get("speakBlankLines", settings.speakBlankLines))
         self.get_widget("speakNumbersAsDigitsCheckButton").set_active(
             prefs.get("speakNumbersAsDigits", settings.speakNumbersAsDigits))
-        self.get_widget("enableTutorialMessagesCheckButton").set_active(\
-            prefs["enableTutorialMessages"])
-        self.get_widget("enablePauseBreaksCheckButton").set_active(\
-            prefs["enablePauseBreaks"])
-        self.get_widget("enablePositionSpeakingCheckButton").set_active(\
-            prefs["enablePositionSpeaking"])
-        self.get_widget("enableMnemonicSpeakingCheckButton").set_active(\
-            prefs["enableMnemonicSpeaking"])
+        self.get_widget("enableTutorialMessagesCheckButton").set_active(
+            prefs.get("enableTutorialMessages", settings.enableTutorialMessages))
+        self.get_widget("enablePauseBreaksCheckButton").set_active(
+            prefs.get("enablePauseBreaks", settings.enablePauseBreaks))
+        self.get_widget("enablePositionSpeakingCheckButton").set_active(
+            prefs.get("enablePositionSpeaking", settings.enablePositionSpeaking))
+        self.get_widget("enableMnemonicSpeakingCheckButton").set_active(
+            prefs.get("enableMnemonicSpeaking", settings.enableMnemonicSpeaking))
         self.get_widget("speakMisspelledIndicatorCheckButton").set_active(
             prefs.get("speakMisspelledIndicator", settings.speakMisspelledIndicator))
         self.get_widget("speakDescriptionCheckButton").set_active(
@@ -1557,7 +1482,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
           ])
 
         indexdate = DATE_FORMAT_LOCALE
-        dateFormat = self.prefsDict["presentDateFormat"]
+        dateFormat = self.prefsDict.get("presentDateFormat", settings.presentDateFormat)
         if dateFormat == messages.DATE_FORMAT_LOCALE:
             indexdate = DATE_FORMAT_LOCALE
         elif dateFormat == messages.DATE_FORMAT_NUMBERS_DM:
@@ -1814,13 +1739,13 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
     def __initProfileCombo(self):
         """Adding available profiles and setting active as the active one"""
 
-        availableProfiles = self.__getAvailableProfiles()
+        available_profiles = self.__getAvailableProfiles()
         self.profilesComboModel.clear()
 
-        if not len(availableProfiles):
+        if not len(available_profiles):
             self.profilesComboModel.append(self._defaultProfile)
         else:
-            for profile in availableProfiles:
+            for profile in available_profiles:
                 self.profilesComboModel.append(profile)
 
         activeProfile = self.prefsDict.get('activeProfile') or self._defaultProfile
@@ -1835,7 +1760,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
 
     def __getAvailableProfiles(self):
         """Get available user profiles."""
-        return _settingsManager.availableProfiles()
+        return settings_manager.get_manager().available_profiles()
 
     def _updateOrcaModifier(self):
         combobox = self.get_widget("orcaModifierComboBox")
@@ -1922,39 +1847,30 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         the GUI has already been created.
         """
 
-        orcaSetupWindow = self.get_widget("orcaSetupWindow")
+        if OrcaSetupGUI.DIALOG is not None:
+            OrcaSetupGUI.DIALOG.present()
+            return
 
+        OrcaSetupGUI.DIALOG = self.get_widget("orcaSetupWindow")
         accelGroup = Gtk.AccelGroup()
-        orcaSetupWindow.add_accel_group(accelGroup)
+        OrcaSetupGUI.DIALOG.add_accel_group(accelGroup)
         helpButton = self.get_widget("helpButton")
         (keyVal, modifierMask) = Gtk.accelerator_parse("F1")
-        helpButton.add_accelerator("clicked",
-                                   accelGroup,
-                                   keyVal,
-                                   modifierMask,
-                                   0)
-
-        try:
-            ts = orca_state.lastInputEvent.timestamp
-        except:
-            ts = 0
-        if ts == 0:
-            ts = Gtk.get_current_event_time()
-        orcaSetupWindow.present_with_time(ts)
+        helpButton.add_accelerator("clicked", accelGroup, keyVal, modifierMask, 0)
 
         # We always want to re-order the text attributes page so that enabled
         # items are consistently at the top.
-        #
         self._setSpokenTextAttributes(
                 self.getTextAttributesView,
-                _settingsManager.getSetting('enabledSpokenTextAttributes'),
+                settings_manager.get_manager().get_setting("textAttributesToSpeak"),
                 True, True)
 
         if self.script.app:
-            title = guilabels.PREFERENCES_APPLICATION_TITLE % self.script.app.name
-            orcaSetupWindow.set_title(title)
+            title = guilabels.PREFERENCES_APPLICATION_TITLE % AXObject.get_name(self.script.app)
+            OrcaSetupGUI.DIALOG.set_title(title)
 
-        orcaSetupWindow.show()
+        OrcaSetupGUI.DIALOG.show_all()
+        OrcaSetupGUI.DIALOG.present_with_time(time.time())
 
     def _initComboBox(self, combobox):
         """Initialize the given combo box to take a list of int/str pairs.
@@ -1970,7 +1886,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         try:
             columnToDisplay = combobox.get_cells()[0]
             combobox.add_attribute(columnToDisplay, 'text', 1)
-        except:
+        except Exception:
             combobox.add_attribute(cell, 'text', 1)
         model = Gtk.ListStore(int, str)
         combobox.set_model(model)
@@ -2012,7 +1928,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         self.script.speakMessage(text, interrupt=interrupt)
         try:
             self.script.displayBrailleMessage(text, flashTime=-1)
-        except:
+        except Exception:
             pass
 
     def _createNode(self, appName):
@@ -2059,9 +1975,9 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
 
         clickCountString = ""
         if clickCount == 2:
-            clickCountString = " (%s)" % guilabels.CLICK_COUNT_DOUBLE
+            clickCountString = f" ({guilabels.CLICK_COUNT_DOUBLE})"
         elif clickCount == 3:
-            clickCountString = " (%s)" % guilabels.CLICK_COUNT_TRIPLE
+            clickCountString = f" ({guilabels.CLICK_COUNT_TRIPLE})"
 
         return clickCountString
 
@@ -2079,6 +1995,9 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
 
         model = self.keyBindingsModel
 
+        if not kb.handler:
+            return None
+
         if parent is None:
             parent = self._getIterOf(guilabels.KB_GROUP_DEFAULT)
 
@@ -2088,9 +2007,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
                 text = None
             else:
                 clickCount = self._clickCountToString(kb.click_count)
-                modifierNames = keybindings.getModifierNames(kb.modifiers)
                 keysymstring = kb.keysymstring
-                text = keybindings.getModifierNames(kb.modifiers) \
+                text = keybindings.get_modifier_names(kb.modifiers) \
                        + keysymstring \
                        + clickCount
 
@@ -2146,9 +2064,10 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         """
 
         try:
-            self.script.setupInputEventHandlers()
+            self.script.setup_input_event_handlers()
             keyBinds = keybindings.KeyBindings()
-            keyBinds = _settingsManager.overrideKeyBindings(self.script, keyBinds)
+            keyBinds = settings_manager.get_manager().override_key_bindings(
+                self.script.input_event_handlers, keyBinds, enabled_only=False)
             keyBind = keybindings.KeyBinding(None, None, None, None)
             treeModel = self.keyBindingsModel
 
@@ -2159,13 +2078,20 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
                     descrip = treeModel.get_value(iterChild, DESCRIP)
                     keyBind.handler = \
                         input_event.InputEventHandler(None, descrip)
-                    if keyBinds.hasKeyBinding(keyBind,
-                                              typeOfSearch="description"):
+                    if keyBinds.has_key_binding(keyBind,
+                                              type_of_search="description"):
                         treeModel.set_value(iterChild, MODIF, True)
                     iterChild = treeModel.iter_next(iterChild)
                 myiter = treeModel.iter_next(myiter)
-        except:
-            debug.printException(debug.LEVEL_SEVERE)
+        except Exception:
+            debug.print_exception(debug.LEVEL_SEVERE)
+
+    def _get_input_event_handler_key(self, event_handler):
+        for key_name, handler in self.script.input_event_handlers.items():
+            if handler == event_handler:
+                return key_name
+
+        return None
 
     def _populateKeyBindings(self, clearModel=True):
         """Fills the TreeView with the list of Orca keybindings
@@ -2181,48 +2107,116 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             self.keyBindingsModel.clear()
             self.kbindings = None
 
-        try:
-            appName = self.script.app.name
-        except:
-            appName = ""
-
+        appName = AXObject.get_name(self.script.app)
         iterApp = self._createNode(appName)
         iterOrca = self._createNode(guilabels.KB_GROUP_DEFAULT)
-        iterUnbound = self._createNode(guilabels.KB_GROUP_UNBOUND)
+        iterNotificationPresenter = self._createNode(guilabels.KB_GROUP_NOTIFICATIONS)
+        iterClipboardPresenter = self._createNode(guilabels.KB_GROUP_CLIPBOARD)
+        iterFlatReviewPresenter = self._createNode(guilabels.KB_GROUP_FLAT_REVIEW)
+        iterFind = self._createNode(guilabels.KB_GROUP_FIND)
+        iterSpeechAndVerbosity = self._createNode(guilabels.KB_GROUP_SPEECH_VERBOSITY)
+        iterSystemInfo = self._createNode(guilabels.KB_GROUP_SYSTEM_INFORMATION)
+        iterSleepMode = self._createNode(guilabels.KB_GROUP_SLEEP_MODE)
+        iterBookmarks = self._createNode(guilabels.KB_GROUP_BOOKMARKS)
+        iterObjectNav = self._createNode(guilabels.KB_GROUP_OBJECT_NAVIGATION)
+        iterTableNav = self._createNode(guilabels.KB_GROUP_TABLE_NAVIGATION)
+        iterWhereAmIPresenter = self._createNode(guilabels.KB_GROUP_WHERE_AM_I)
+        iterLearnMode = self._createNode(guilabels.KB_GROUP_LEARN_MODE)
+        iterMouseReviewer = self._createNode(guilabels.KB_GROUP_MOUSE_REVIEW)
+        iterActionPresenter = self._createNode(guilabels.KB_GROUP_ACTIONS)
+        iterDebuggingTools = self._createNode(guilabels.KB_GROUP_DEBUGGING_TOOLS)
 
         if not self.kbindings:
+            layout = settings_manager.get_manager().get_setting('keyboardLayout')
+            isDesktop = layout == settings.GENERAL_KEYBOARD_LAYOUT_DESKTOP
+
             self.kbindings = keybindings.KeyBindings()
-            self.script.setupInputEventHandlers()
-            allKeyBindings = self.script.getKeyBindings()
+            self.script.setup_input_event_handlers()
+            allKeyBindings = self.script.get_key_bindings(False)
             defKeyBindings = self.script.getDefaultKeyBindings()
-            for kb in allKeyBindings.keyBindings:
-                if not self.kbindings.hasKeyBinding(kb, "strict"):
-                    handl = self.script.getInputEventHandlerKey(kb.handler)
-                    if not defKeyBindings.hasKeyBinding(kb, "description"):
+            npKeyBindings = self.script.get_notification_presenter().get_bindings(
+                is_desktop=isDesktop)
+            cbKeyBindings = self.script.get_clipboard_presenter().get_bindings(
+                is_desktop=isDesktop)
+            svKeyBindings = self.script.get_speech_and_verbosity_manager().get_bindings(
+                is_desktop=isDesktop)
+            sysKeyBindings = self.script.get_system_information_presenter().get_bindings(
+                is_desktop=isDesktop)
+            smKeyBindings = self.script.get_sleep_mode_manager().get_bindings(
+                is_desktop=isDesktop)
+            bmKeyBindings = self.script.get_bookmarks().get_bindings(
+                is_desktop=isDesktop)
+            onKeyBindings = self.script.get_object_navigator().get_bindings(
+                is_desktop=isDesktop)
+            tnKeyBindings = self.script.get_table_navigator().get_bindings(
+                is_desktop=isDesktop)
+            lmKeyBindings = self.script.get_learn_mode_presenter().get_bindings(
+                is_desktop=isDesktop)
+            mrKeyBindings = self.script.get_mouse_reviewer().get_bindings(
+                is_desktop=isDesktop)
+            acKeyBindings = self.script.get_action_presenter().get_bindings(
+                is_desktop=isDesktop)
+            frKeyBindings = self.script.get_flat_review_presenter().get_bindings(
+                is_desktop=isDesktop)
+            findKeyBindings = self.script.get_flat_review_finder().get_bindings(
+                is_desktop=isDesktop)
+            waiKeyBindings = self.script.get_where_am_i_presenter().get_bindings(
+                is_desktop=isDesktop)
+            debuggingKeyBindings = self.script.get_debugging_tools_manager().get_bindings(
+                is_desktop=isDesktop)
+
+            for kb in allKeyBindings.key_bindings:
+                if not self.kbindings.has_key_binding(kb, "strict"):
+                    handl = self._get_input_event_handler_key(kb.handler)
+                    if npKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterNotificationPresenter)
+                    elif cbKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterClipboardPresenter)
+                    elif onKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterObjectNav)
+                    elif tnKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterTableNav)
+                    elif frKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterFlatReviewPresenter)
+                    elif findKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterFind)
+                    elif waiKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterWhereAmIPresenter)
+                    elif svKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterSpeechAndVerbosity)
+                    elif sysKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterSystemInfo)
+                    elif smKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterSleepMode)
+                    elif bmKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterBookmarks)
+                    elif lmKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterLearnMode)
+                    elif acKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterActionPresenter)
+                    elif mrKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterMouseReviewer)
+                    elif debuggingKeyBindings.has_key_binding(kb, "description"):
+                        self._insertRow(handl, kb, iterDebuggingTools)
+                    elif not defKeyBindings.has_key_binding(kb, "description"):
                         self._insertRow(handl, kb, iterApp)
-                    elif kb.keysymstring:
-                        self._insertRow(handl, kb, iterOrca)
                     else:
-                        self._insertRow(handl, kb, iterUnbound)
+                        self._insertRow(handl, kb, iterOrca)
                     self.kbindings.add(kb)
 
         if not self.keyBindingsModel.iter_has_child(iterApp):
             self.keyBindingsModel.remove(iterApp)
 
-        if not self.keyBindingsModel.iter_has_child(iterUnbound):
-            self.keyBindingsModel.remove(iterUnbound)
-
         self._updateOrcaModifier()
         self._markModified()
         iterBB = self._createNode(guilabels.KB_GROUP_BRAILLE)
-        self.bbindings = self.script.getBrailleBindings()
+        self.bbindings = self.script.get_braille_bindings()
         for com, inputEvHand in self.bbindings.items():
-            handl = self.script.getInputEventHandlerKey(inputEvHand)
+            handl = self._get_input_event_handler_key(inputEvHand)
             self._insertRowBraille(handl, com, inputEvHand, iterBB)
 
         self.keyBindView.set_model(self.keyBindingsModel)
         self.keyBindView.set_headers_visible(True)
-        self.keyBindView.expand_all()
         self.keyBindingsModel.set_sort_column_id(OLDTEXT1, Gtk.SortType.ASCENDING)
         self.keyBindView.show()
 
@@ -2316,7 +2310,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             del self.uppercaseVoice[acss.ACSS.FAMILY]
             del self.hyperlinkVoice[acss.ACSS.FAMILY]
             del self.systemVoice[acss.ACSS.FAMILY]
-        except:
+        except Exception:
             pass
 
         self._setupVoices()
@@ -2347,8 +2341,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
                 variant = family[speechserver.VoiceFamily.VARIANT]
                 voiceType = self.get_widget("voiceTypesCombo").get_active()
                 self._setFamilyNameForVoiceType(voiceType, name, language, dialect, variant)
-        except:
-            debug.printException(debug.LEVEL_SEVERE)
+        except Exception:
+            debug.print_exception(debug.LEVEL_SEVERE)
 
         # Remember the last family manually selected by the user for the
         # current speech server.
@@ -2379,8 +2373,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             variant = family[speechserver.VoiceFamily.VARIANT]
             voiceType = self.get_widget("voiceTypesCombo").get_active()
             self._setFamilyNameForVoiceType(voiceType, name, language, dialect, variant)
-        except:
-            debug.printException(debug.LEVEL_SEVERE)
+        except Exception:
+            debug.print_exception(debug.LEVEL_SEVERE)
 
         # Remember the last family manually selected by the user for the
         # current speech server.
@@ -2418,9 +2412,9 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         rate = widget.get_value()
         voiceType = self.get_widget("voiceTypesCombo").get_active()
         self._setRateForVoiceType(voiceType, rate)
-        voices = _settingsManager.getSetting('voices')
-        voices[settings.DEFAULT_VOICE][acss.ACSS.RATE] = rate
-        _settingsManager.setSetting('voices', voices)
+        voices = settings_manager.get_manager().get_setting('voices')
+        voices.get(settings.DEFAULT_VOICE, {})[acss.ACSS.RATE] = rate
+        settings_manager.get_manager().set_setting('voices', voices)
 
     def pitchValueChanged(self, widget):
         """Signal handler for the "value_changed" signal for the pitchScale
@@ -2435,9 +2429,9 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         pitch = widget.get_value()
         voiceType = self.get_widget("voiceTypesCombo").get_active()
         self._setPitchForVoiceType(voiceType, pitch)
-        voices = _settingsManager.getSetting('voices')
-        voices[settings.DEFAULT_VOICE][acss.ACSS.AVERAGE_PITCH] = pitch
-        _settingsManager.setSetting('voices', voices)
+        voices = settings_manager.get_manager().get_setting('voices')
+        voices.get(settings.DEFAULT_VOICE, {})[acss.ACSS.AVERAGE_PITCH] = pitch
+        settings_manager.get_manager().set_setting('voices', voices)
 
     def volumeValueChanged(self, widget):
         """Signal handler for the "value_changed" signal for the voiceScale
@@ -2452,9 +2446,9 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         volume = widget.get_value()
         voiceType = self.get_widget("voiceTypesCombo").get_active()
         self._setVolumeForVoiceType(voiceType, volume)
-        voices = _settingsManager.getSetting('voices')
-        voices[settings.DEFAULT_VOICE][acss.ACSS.GAIN] = volume
-        _settingsManager.setSetting('voices', voices)
+        voices = settings_manager.get_manager().get_setting('voices')
+        voices.get(settings.DEFAULT_VOICE, {})[acss.ACSS.GAIN] = volume
+        settings_manager.get_manager().set_setting('voices', voices)
 
     def checkButtonToggled(self, widget):
         """Signal handler for "toggled" signal for basic GtkCheckButton 
@@ -2643,7 +2637,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             self.prefsDict["capitalizationStyle"] = settings.CAPITALIZATION_STYLE_SPELL
         else:
             self.prefsDict["capitalizationStyle"] = settings.CAPITALIZATION_STYLE_NONE
-        speech.updateCapitalizationStyle()
+        self.script.get_speech_and_verbosity_manager().update_capitalization_style()
 
     def sayAllStyleChanged(self, widget):
         """Signal handler for the "changed" signal for the sayAllStyle
@@ -2812,15 +2806,16 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         """Starts user input of a Key for a selected key binding"""
 
         self._presentMessage(messages.KB_ENTER_NEW_KEY)
-        orca_state.capturingKeys = True
+        script_manager.get_manager().get_active_script().remove_key_grabs("Capturing keys")
+        input_event_manager.get_manager().unmap_all_modifiers()
         editable.connect('key-press-event', self.kbKeyPressed)
         return
 
     def editingCanceledKey(self, editable):
         """Stops user input of a Key for a selected key binding"""
 
-        orca_state.capturingKeys = False
         self._capturedKey = []
+        script_manager.get_manager().get_active_script().refresh_key_grabs("Done capturing keys")
         return
 
     def _processKeyCaptured(self, keyPressedEvent):
@@ -2857,8 +2852,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             return True
 
         string, modifiers, clickCount = self._capturedKey
-        isOrcaModifier = modifiers & keybindings.ORCA_MODIFIER_MASK
-        if isOrcaModifier:
+        is_orca_modifier = modifiers & keybindings.ORCA_MODIFIER_MASK
+        if is_orca_modifier:
             eventState |= keybindings.ORCA_MODIFIER_MASK
             self._capturedKey = [eventString, eventState, clickCount + 1]
 
@@ -2881,8 +2876,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         if not keyName or keyName in ["Return", "Escape"]:
             return False
 
-        isOrcaModifier = modifiers & keybindings.ORCA_MODIFIER_MASK
-        if keyName in ["Delete", "BackSpace"] and not isOrcaModifier:
+        is_orca_modifier = modifiers & keybindings.ORCA_MODIFIER_MASK
+        if keyName in ["Delete", "BackSpace"] and not is_orca_modifier:
             editable.set_text("")
             self._presentMessage(messages.KB_DELETED)
             self._capturedKey = []
@@ -2890,21 +2885,22 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             return True
 
         self.newBinding = keybindings.KeyBinding(keyName,
-                                                 keybindings.defaultModifierMask,
+                                                 keybindings.DEFAULT_MODIFIER_MASK,
                                                  modifiers,
                                                  None,
                                                  clickCount)
-        modifierNames = keybindings.getModifierNames(modifiers)
+        modifierNames = keybindings.get_modifier_names(modifiers)
         clickCountString = self._clickCountToString(clickCount)
         newString = modifierNames + keyName + clickCountString
         description = self.pendingKeyBindings.get(newString)
 
         if description is None:
-            match = lambda x: x.keysymstring == keyName \
-                          and x.modifiers == modifiers \
-                          and x.click_count == clickCount \
-                          and x.handler
-            matches = list(filter(match, self.kbindings.keyBindings))
+
+            def match(x):
+                return x.keysymstring == keyName and x.modifiers == modifiers \
+                    and x.click_count == clickCount and x.handler
+
+            matches = list(filter(match, self.kbindings.key_bindings))
             if matches:
                 description = matches[0].handler.description
 
@@ -2925,12 +2921,12 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         the treeview.
         """
 
-        orca_state.capturingKeys = False
         self._capturedKey = []
+        script_manager.get_manager().get_active_script().refresh_key_grabs("Done capturing keys")
         myiter = treeModel.get_iter_from_string(path)
         try:
             originalBinding = treeModel.get_value(myiter, text)
-        except:
+        except Exception:
             originalBinding = ''
         modified = (originalBinding != new_text)
 
@@ -2938,24 +2934,23 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             string = self.newBinding.keysymstring
             mods = self.newBinding.modifiers
             clickCount = self.newBinding.click_count
-        except:
+        except Exception:
             string = ''
             mods = 0
             clickCount = 1
 
         mods = mods & Gdk.ModifierType.MODIFIER_MASK
-        if mods & (1 << pyatspi.MODIFIER_SHIFTLOCK) \
+        if mods & (1 << Atspi.ModifierType.SHIFTLOCK) \
            and mods & keybindings.ORCA_MODIFIER_MASK:
-            mods ^= (1 << pyatspi.MODIFIER_SHIFTLOCK)
+            mods ^= (1 << Atspi.ModifierType.SHIFTLOCK)
 
         treeModel.set(myiter,
-                      modMask, str(keybindings.defaultModifierMask),
+                      modMask, str(keybindings.DEFAULT_MODIFIER_MASK),
                       modUsed, str(int(mods)),
                       key, string,
                       text, new_text,
                       click_count, str(clickCount),
                       MODIF, modified)
-        speech.stop()
         if new_text:
             message = messages.KB_CAPTURED_CONFIRMATION % new_text
             description = treeModel.get_value(myiter, DESCRIP)
@@ -3040,77 +3035,12 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         model, oldIter = self.pronunciationView.get_selection().get_selected()
         model.remove(oldIter)
 
-    def textSelectAllButtonClicked(self, widget):
-        """Signal handler for the "clicked" signal for the
-        textSelectAllButton GtkButton widget. The user has clicked
-        the Speak all button.  Check all the text attributes and
-        then update the "enabledSpokenTextAttributes" and
-        "enabledBrailledTextAttributes" preference strings.
-
-        Arguments:
-        - widget: the component that generated the signal.
-        """
-
-        attributes = _settingsManager.getSetting('allTextAttributes')
-        self._setSpokenTextAttributes(
-            self.getTextAttributesView, attributes, True)
-        self._setBrailledTextAttributes(
-            self.getTextAttributesView, attributes, True)
-        self._updateTextDictEntry()
-
-    def textUnselectAllButtonClicked(self, widget):
-        """Signal handler for the "clicked" signal for the
-        textUnselectAllButton GtkButton widget. The user has clicked
-        the Speak none button. Uncheck all the text attributes and
-        then update the "enabledSpokenTextAttributes" and
-        "enabledBrailledTextAttributes" preference strings.
-
-        Arguments:
-        - widget: the component that generated the signal.
-        """
-
-        attributes = _settingsManager.getSetting('allTextAttributes')
-        self._setSpokenTextAttributes(
-            self.getTextAttributesView, attributes, False)
-        self._setBrailledTextAttributes(
-            self.getTextAttributesView, attributes, False)
-        self._updateTextDictEntry()
-
-    def textResetButtonClicked(self, widget):
-        """Signal handler for the "clicked" signal for the
-        textResetButton GtkButton widget. The user has clicked
-        the Reset button. Reset all the text attributes to their
-        initial state and then update the "enabledSpokenTextAttributes"
-        and "enabledBrailledTextAttributes" preference strings.
-
-        Arguments:
-        - widget: the component that generated the signal.
-        """
-
-        attributes = _settingsManager.getSetting('allTextAttributes')
-        self._setSpokenTextAttributes(
-            self.getTextAttributesView, attributes, False)
-        self._setBrailledTextAttributes(
-            self.getTextAttributesView, attributes, False)
-
-        attributes = _settingsManager.getSetting('enabledSpokenTextAttributes')
-        self._setSpokenTextAttributes(
-            self.getTextAttributesView, attributes, True)
-
-        attributes = \
-            _settingsManager.getSetting('enabledBrailledTextAttributes')
-        self._setBrailledTextAttributes(
-            self.getTextAttributesView, attributes, True)
-
-        self._updateTextDictEntry()
-
     def textMoveToTopButtonClicked(self, widget):
         """Signal handler for the "clicked" signal for the
         textMoveToTopButton GtkButton widget. The user has clicked
         the Move to top button. Move the selected rows in the text
         attribute view to the very top of the list and then update
-        the "enabledSpokenTextAttributes" and "enabledBrailledTextAttributes"
-        preference strings.
+        the preferences.
 
         Arguments:
         - widget: the component that generated the signal.
@@ -3128,8 +3058,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         textMoveUpOneButton GtkButton widget. The user has clicked
         the Move up one button. Move the selected rows in the text
         attribute view up one row in the list and then update the
-        "enabledSpokenTextAttributes" and "enabledBrailledTextAttributes"
-        preference strings.
+        preferences.
 
         Arguments:
         - widget: the component that generated the signal.
@@ -3150,8 +3079,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         textMoveDownOneButton GtkButton widget. The user has clicked
         the Move down one button. Move the selected rows in the text
         attribute view down one row in the list and then update the
-        "enabledSpokenTextAttributes" and "enabledBrailledTextAttributes"
-        preference strings.
+        preferences.
 
         Arguments:
         - widget: the component that generated the signal.
@@ -3173,8 +3101,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         textMoveToBottomButton GtkButton widget. The user has clicked
         the Move to bottom button. Move the selected rows in the text
         attribute view to the bottom of the list and then update the
-        "enabledSpokenTextAttributes" and "enabledBrailledTextAttributes"
-        preference strings.
+        preferences.
 
         Arguments:
         - widget: the component that generated the signal.
@@ -3195,7 +3122,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         - widget: the component that generated the signal.
         """
 
-        orca.helpForOrca(page="preferences")
+        self.script.get_learn_mode_presenter().show_help(page="preferences")
 
     def restoreSettings(self):
         """Restore the settings we saved away when opening the preferences
@@ -3203,11 +3130,12 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         # Restore the default rate/pitch/gain,
         # in case the user played with the sliders.
         #
-        voices = _settingsManager.getSetting('voices')
-        defaultVoice = voices[settings.DEFAULT_VOICE]
-        defaultVoice[acss.ACSS.GAIN] = self.savedGain
-        defaultVoice[acss.ACSS.AVERAGE_PITCH] = self.savedPitch
-        defaultVoice[acss.ACSS.RATE] =  self.savedRate
+        voices = settings_manager.get_manager().get_setting('voices')
+        defaultVoice = voices.get(settings.DEFAULT_VOICE)
+        if defaultVoice is not None:
+            defaultVoice[acss.ACSS.GAIN] = self.savedGain
+            defaultVoice[acss.ACSS.AVERAGE_PITCH] = self.savedPitch
+            defaultVoice[acss.ACSS.RATE] = self.savedRate
 
     def saveBasicSettings(self):
         if not self._isInitialSetup:
@@ -3222,7 +3150,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
 
         if self.speechServersChoice:
             self.prefsDict["speechServerInfo"] = \
-                self.speechServersChoice.getInfo()
+                self.speechServersChoice.get_info()
 
         if self.defaultVoice is not None:
             self.prefsDict["voices"] = {
@@ -3245,27 +3173,28 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         Arguments:
         - widget: the component that generated the signal.
         """
-        self.saveBasicSettings()
 
+        msg = "PREFERENCES DIALOG: Apply button clicked"
+        debug.print_message(debug.LEVEL_ALL, msg, True)
+
+        self.saveBasicSettings()
         activeProfile = self.getComboBoxList(self.profilesCombo)
         startingProfile = self.getComboBoxList(self.startingProfileCombo)
 
         self.prefsDict['profile'] = activeProfile
         self.prefsDict['activeProfile'] = activeProfile
         self.prefsDict['startingProfile'] = startingProfile
-        _settingsManager.setStartingProfile(startingProfile)
+        settings_manager.get_manager().set_starting_profile(startingProfile)
 
         self.writeUserPreferences()
-
         orca.loadUserSettings(self.script)
-
         braille.checkBrailleSetting()
-
         self._initSpeechState()
-
         self._populateKeyBindings()
-
         self.__initProfileCombo()
+
+        msg = "PREFERENCES DIALOG: Handling Apply button click complete"
+        debug.print_message(debug.LEVEL_ALL, msg, True)
 
     def cancelButtonClicked(self, widget):
         """Signal handler for the "clicked" signal for the cancelButton
@@ -3276,8 +3205,14 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         - widget: the component that generated the signal.
         """
 
+        msg = "PREFERENCES DIALOG: Cancel button clicked"
+        debug.print_message(debug.LEVEL_ALL, msg, True)
+
         self.windowClosed(widget)
         self.get_widget("orcaSetupWindow").destroy()
+
+        msg = "PREFERENCES DIALOG: Handling Cancel button click complete"
+        debug.print_message(debug.LEVEL_ALL, msg, True)
 
     def okButtonClicked(self, widget=None):
         """Signal handler for the "clicked" signal for the okButton
@@ -3292,9 +3227,15 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         - widget: the component that generated the signal.
         """
 
+        msg = "PREFERENCES DIALOG: OK button clicked"
+        debug.print_message(debug.LEVEL_ALL, msg, True)
+
         self.applyButtonClicked(widget)
         self._cleanupSpeechServers()
         self.get_widget("orcaSetupWindow").destroy()
+
+        msg = "PREFERENCES DIALOG: Handling OK button click complete"
+        debug.print_message(debug.LEVEL_ALL, msg, True)
 
     def windowClosed(self, widget):
         """Signal handler for the "closed" signal for the orcaSetupWindow
@@ -3305,26 +3246,33 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         - widget: the component that generated the signal.
         """
 
-        factory = _settingsManager.getSetting('speechServerFactory')
-        if factory:
-            self._setSpeechSystemsChoice(factory)
+        msg = "PREFERENCES DIALOG: Window is being closed"
+        debug.print_message(debug.LEVEL_ALL, msg, True)
 
-        server = _settingsManager.getSetting('speechServerInfo')
-        if server:
-            self._setSpeechServersChoice(server)
+        self.suspendEvents()
+
+        if not settings.speechSystemOverride:
+            factory = settings_manager.get_manager().get_setting('speechServerFactory')
+            if factory:
+                self._setSpeechSystemsChoice(factory)
+
+            server = settings_manager.get_manager().get_setting('speechServerInfo')
+            if server:
+                self._setSpeechServersChoice(server)
 
         self._cleanupSpeechServers()
         self.restoreSettings()
 
-    def windowDestroyed(self, widget):
-        """Signal handler for the "destroyed" signal for the orcaSetupWindow
-           GtkWindow widget. Reset orca_state.orcaOS to None, so that the 
-           GUI can be rebuilt from the GtkBuilder file the next time the user
-           wants to display the configuration GUI.
+        GObject.timeout_add(1000, self.resumeEvents)
 
-        Arguments:
-        - widget: the component that generated the signal.
-        """
+        msg = "PREFERENCES DIALOG: Window closure complete"
+        debug.print_message(debug.LEVEL_ALL, msg, True)
+
+    def windowDestroyed(self, widget):
+        """Signal handler for the "destroyed" signal for the Preferences dialog."""
+
+        msg = "PREFERENCES DIALOG: Window is being destroyed"
+        debug.print_message(debug.LEVEL_ALL, msg, True)
 
         self.keyBindView.set_model(None)
         self.getTextAttributesView.set_model(None)
@@ -3335,7 +3283,30 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         self.keyBindView.hide()
         self.getTextAttributesView.hide()
         self.pronunciationView.hide()
-        orca_state.orcaOS = None
+        OrcaSetupGUI.DIALOG = None
+
+        msg = "PREFERENCES DIALOG: Window destruction complete"
+        debug.print_message(debug.LEVEL_ALL, msg, True)
+
+    def resumeEvents(self):
+        msg = "PREFERENCES DIALOG: Re-registering floody events."
+        debug.print_message(debug.LEVEL_ALL, msg, True)
+
+        manager = event_manager.get_manager()
+        manager.register_listener("object:state-changed:showing")
+        manager.register_listener("object:children-changed:remove")
+        manager.register_listener("object:selection-changed")
+        manager.register_listener("object:property-change:accessible-name")
+
+    def suspendEvents(self):
+        msg = "PREFERENCES DIALOG: Deregistering floody events."
+        debug.print_message(debug.LEVEL_ALL, msg, True)
+
+        manager = event_manager.get_manager()
+        manager.deregister_listener("object:state-changed:showing")
+        manager.deregister_listener("object:children-changed:remove")
+        manager.deregister_listener("object:selection-changed")
+        manager.deregister_listener("object:property-change:accessible-name")
 
     def showProfileGUI(self, widget):
         """Show profile Dialog to add a new one"""
@@ -3361,21 +3332,21 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             self.saveBasicSettings()
             self.writeUserPreferences()
 
-        availableProfiles = [p[1] for p in self.__getAvailableProfiles()]
+        available_profiles = [p[1] for p in self.__getAvailableProfiles()]
         if isinstance(profileToSave, str) \
                 and profileToSave != '' \
-                and not profileToSave in availableProfiles \
+                and profileToSave not in available_profiles \
                 and profileToSave != self._defaultProfile[1]:
             saveActiveProfile()
         else:
             if profileToSave is not None:
                 message = guilabels.PROFILE_CONFLICT_MESSAGE % \
-                    ("<b>%s</b>" % GLib.markup_escape_text(profileToSaveLabel))
+                    f"<b>{GLib.markup_escape_text(profileToSaveLabel)}</b>"
                 dialog = Gtk.MessageDialog(None,
                         Gtk.DialogFlags.MODAL,
                         type=Gtk.MessageType.INFO,
                         buttons=Gtk.ButtonsType.YES_NO)
-                dialog.set_markup("<b>%s</b>" % guilabels.PROFILE_CONFLICT_LABEL)
+                dialog.set_markup(f"<b>{guilabels.PROFILE_CONFLICT_LABEL}</b>")
                 dialog.format_secondary_markup(message)
                 dialog.set_title(guilabels.PROFILE_CONFLICT_TITLE)
                 response = dialog.run()
@@ -3384,7 +3355,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
                     saveActiveProfile(False)
                 else:
                     dialog.destroy()
-                
+
 
     def removeProfileButtonClicked(self, widget):
         """Remove profile button clicked handler
@@ -3396,11 +3367,11 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         oldProfile = self.getComboBoxList(self.profilesCombo)
 
         message = guilabels.PROFILE_REMOVE_MESSAGE % \
-            ("<b>%s</b>" % GLib.markup_escape_text(oldProfile[0]))
+            f"<b>{GLib.markup_escape_text(oldProfile[0])}</b>"
         dialog = Gtk.MessageDialog(self.window, Gtk.DialogFlags.MODAL,
                                    type=Gtk.MessageType.INFO,
                                    buttons=Gtk.ButtonsType.YES_NO)
-        dialog.set_markup("<b>%s</b>" % guilabels.PROFILE_REMOVE_LABEL)
+        dialog.set_markup(f"<b>{guilabels.PROFILE_REMOVE_LABEL}</b>")
         dialog.format_secondary_markup(message)
         if dialog.run() == Gtk.ResponseType.YES:
             # If we remove the currently used starting profile, fallback on
@@ -3421,14 +3392,14 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
             if not newProfile or newProfile == oldProfile:
                 newProfile = newStartingProfile
 
-            _settingsManager.removeProfile(oldProfile[1])
+            settings_manager.get_manager().remove_profile(oldProfile[1])
             self.loadProfile(newProfile)
 
             # Make sure nothing is referencing the removed profile anymore
             startingProfile = self.prefsDict.get('startingProfile')
             if not startingProfile or startingProfile == oldProfile:
                 self.prefsDict['startingProfile'] = newStartingProfile
-                _settingsManager.setStartingProfile(newStartingProfile)
+                settings_manager.get_manager().set_starting_profile(newStartingProfile)
                 self.writeUserPreferences()
 
         dialog.destroy()
@@ -3444,7 +3415,7 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
                 type=Gtk.MessageType.INFO,
                 buttons=Gtk.ButtonsType.YES_NO)
 
-        dialog.set_markup("<b>%s</b>" % guilabels.PROFILE_LOAD_LABEL)
+        dialog.set_markup(f"<b>{guilabels.PROFILE_LOAD_LABEL}</b>")
         dialog.format_secondary_markup(guilabels.PROFILE_LOAD_MESSAGE)
         response = dialog.run()
         if response == Gtk.ResponseType.YES:
@@ -3465,8 +3436,8 @@ class OrcaSetupGUI(orca_gtkbuilder.GtkBuilderWrapper):
         self.saveBasicSettings()
 
         self.prefsDict['activeProfile'] = profile
-        _settingsManager.setProfile(profile[1])
-        self.prefsDict = _settingsManager.getGeneralSettings(profile[1])
+        settings_manager.get_manager().set_profile(profile[1])
+        self.prefsDict = settings_manager.get_manager().get_general_settings(profile[1])
 
         orca.loadUserSettings(skipReloadMessage=True)
 

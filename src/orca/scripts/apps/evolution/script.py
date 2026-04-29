@@ -27,135 +27,67 @@ __copyright__ = "Copyright (c) 2005-2008 Sun Microsystems Inc." \
                 "Copyright (c) 2013 Igalia, S.L."
 __license__   = "LGPL"
 
-import pyatspi
-
-import orca.orca as orca
-import orca.scripts.toolkits.gtk as gtk
-import orca.scripts.toolkits.WebKitGtk as WebKitGtk
-import orca.settings as settings
-import orca.settings_manager as settings_manager
-
+from orca import debug
+from orca.ax_utilities import AXUtilities
+from orca.scripts.toolkits import gtk
+from orca.scripts.toolkits import WebKitGTK
 from .braille_generator import BrailleGenerator
 from .speech_generator import SpeechGenerator
 from .script_utilities import Utilities
 
-_settingsManager = settings_manager.getManager()
 
-########################################################################
-#                                                                      #
-# The Evolution script class.                                          #
-#                                                                      #
-########################################################################
+class Script(WebKitGTK.Script, gtk.Script):
+    """Custom script for Evolution."""
+    def get_braille_generator(self):
+        """Returns the braille generator for this script."""
 
-class Script(WebKitGtk.Script, gtk.Script):
-
-    def __init__(self, app):
-        """Creates a new script for the given application.
-
-        Arguments:
-        - app: the application to create a script for.
-        """
-
-        if _settingsManager.getSetting('sayAllOnLoad') is None:
-            _settingsManager.setSetting('sayAllOnLoad', False)
-
-        super().__init__(app)
-        self.presentIfInactive = False
-
-    def getBrailleGenerator(self):
         return BrailleGenerator(self)
 
-    def getSpeechGenerator(self):
+    def get_speech_generator(self):
+        """Returns the speech generator for this script."""
+
         return SpeechGenerator(self)
 
-    def getUtilities(self):
+    def get_utilities(self):
+        """Returns the utilities for this script."""
+
         return Utilities(self)
 
-    def isActivatableEvent(self, event):
-        """Returns True if the given event is one that should cause this
-        script to become the active script.  This is only a hint to
-        the focus tracking manager and it is not guaranteed this
-        request will be honored.  Note that by the time the focus
-        tracking manager calls this method, it thinks the script
-        should become active.  This is an opportunity for the script
-        to say it shouldn't.
-        """
-
-        if event.type.startswith("focus:") and event.source.getRole() == pyatspi.ROLE_MENU:
-            return True
-
-        window = self.utilities.topLevelObject(event.source)
-        if window and not window.getState().contains(pyatspi.STATE_ACTIVE):
-            return False
-
-        return True
-
-    def stopSpeechOnActiveDescendantChanged(self, event):
-        """Whether or not speech should be stopped prior to setting the
-        locusOfFocus in onActiveDescendantChanged.
-
-        Arguments:
-        - event: the Event
-
-        Returns True if speech should be stopped; False otherwise.
-        """
-
-        return False
-
-    ########################################################################
-    #                                                                      #
-    # AT-SPI OBJECT EVENT HANDLERS                                         #
-    #                                                                      #
-    ########################################################################
-
-    def onActiveDescendantChanged(self, event):
-        """Callback for object:active-descendant-changed accessibility events."""
-
-        if not event.any_data:
-            return
-
-        if self.utilities.isComposeAutocomplete(event.source):
-            if event.any_data.getState().contains(pyatspi.STATE_SELECTED):
-                orca.setLocusOfFocus(event, event.any_data)
-            else:
-                orca.setLocusOfFocus(event, event.source)
-            return
-
-        super().onActiveDescendantChanged(event)
-
-    def onBusyChanged(self, event):
+    def on_busy_changed(self, event):
         """Callback for object:state-changed:busy accessibility events."""
-        pass
 
-    def onFocus(self, event):
-        """Callback for focus: accessibility events."""
-
-        if self.utilities.isWebKitGtk(event.source):
+        if self.utilities.is_ignorable_event_from_document_preview(event):
+            msg = "EVOLUTION: Ignoring event from document preview"
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return
 
-        # This is some mystery child of the 'Messages' panel which fails to show
-        # up in the hierarchy or emit object:state-changed:focused events.
-        if event.source.getRole() == pyatspi.ROLE_LAYERED_PANE:
-            obj = self.utilities.realActiveDescendant(event.source)
-            orca.setLocusOfFocus(event, obj)
+        msg = "EVOLUTION: Passing event to super class for processing."
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+        super().on_busy_changed(event)
+
+    def on_caret_moved(self, event):
+        """Callback for object:text-caret-moved accessibility events."""
+
+        if self.utilities.is_ignorable_event_from_document_preview(event):
+            msg = "EVOLUTION: Ignoring event from document preview"
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return
 
-        gtk.Script.onFocus(self, event)
+        msg = "EVOLUTION: Passing event to super class for processing."
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+        super().on_caret_moved(event)
 
-    def onNameChanged(self, event):
-        """Callback for object:property-change:accessible-name events."""
+    def on_focused_changed(self, event):
+        """Callback for object:state-changed:focused accessibility events."""
 
-        if self.utilities.isWebKitGtk(event.source):
+        # TODO - JD: Figure out what's causing this in Evolution or WebKit and file a bug.
+        # When the selected message changes and the preview panel is showing, a panel with the
+        # `iframe` tag claims focus. We don't want to update our location in response.
+        if AXUtilities.is_internal_frame(event.source):
+            tokens = ["EVOLUTION: Ignoring event from internal frame", event.source]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return
 
-        gtk.Script.onNameChanged(self, event)
-
-    def onSelectionChanged(self, event):
-        """Callback for object:selection-changed accessibility events."""
-
-        obj = event.source
-        if obj.getRole() == pyatspi.ROLE_COMBO_BOX \
-           and not obj.getState().contains(pyatspi.STATE_FOCUSED):
-            return
-
-        gtk.Script.onSelectionChanged(self, event)
+        msg = "EVOLUTION: Passing event to super class for processing."
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+        super().on_focused_changed(event)

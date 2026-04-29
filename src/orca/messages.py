@@ -39,6 +39,23 @@ from .orca_platform import version
 # in messages.
 APPLICATION_NO_NAME = C_("generic name", "application")
 
+# Translators: Orca has a command to report the battery status. This message
+# is presented to the user when they use this command but Orca was unable to
+# retrieve any information about the battery.
+BATTERY_STATUS_UNKNOWN = _("Battery status unknown")
+
+# Translators: Orca has a command to report the battery status. This message
+# presents the battery level as a percent.
+BATTERY_LEVEL = _("Battery: %d%%")
+
+# Translators: Orca has a command to report the battery status. This message
+# presents the plugged-in status to the user.
+BATTERY_PLUGGED_IN_TRUE = C_("Battery", "plugged in")
+
+# Translators: Orca has a command to report the battery status. This message
+# presents the plugged-in status to the user.
+BATTERY_PLUGGED_IN_FALSE = C_("Battery", "not plugged in")
+
 # Translators: This is presented when the user has navigated to an empty line.
 BLANK = _("blank")
 
@@ -66,15 +83,40 @@ BOOKMARKS_SAVED = _("bookmarks saved")
 # list of bookmarks being saved to disk.
 BOOKMARKS_SAVED_FAILURE = _("bookmarks could not be saved")
 
-# Translators: Orca normally intercepts all keyboard commands and only passes
-# them along to the current application when they are not Orca commands. This
-# command causes the next command issued to be passed along to the current
-# application, bypassing Orca's interception of it.
-BYPASS_MODE_ENABLED = _("Bypass mode enabled.")
+# Translators: Orca has a feature in which users can store/save a particular
+# location in an application window and return to it later by pressing a
+# keystroke. These stored/saved locations are "bookmarks". This string is
+# presented to the user when they try to go to a bookmark, but don't have
+# any bookmarks.
+BOOKMARKS_NOT_FOUND = _("No bookmarks found.")
 
-# Translators: this is an indication that Orca is unable to obtain the display/
-# results area of the calculator being used (e.g. gcalctool).
-CALCULATOR_DISPLAY_NOT_FOUND = _("Unable to get calculator display")
+# Translators: Orca has a feature in which users can store/save a particular
+# location in an application window and return to it later by pressing a
+# keystroke. These stored/saved locations are "bookmarks". This string is
+# presented to the user when they try to go to a bookmark at a particular
+# index (e.g. bookmark 1 or bookmark 2) but there is no bookmark stored at
+# that index.
+BOOKMARK_NOT_FOUND = _("Bookmark not found.")
+
+# Translators: Orca has a command which toggles all (other) Orca commands so that
+# the associated keystroke can by consumed by the native application. For example,
+# if there were an Orca command bound to Alt+Down, normally pressing Alt+Down
+# would cause the Orca command to be used. This would mean Alt+Down could not be
+# used in editors to move the current line of text down. By temporarily disabling
+# Orca commands, Alt+Down would be ignored by Orca and work as expected in the
+# editor. This string is what Orca presents to the user when Orca's commands are
+# being toggled off.
+BYPASS_MODE_ENABLED = _("Orca command keys off.")
+
+# Translators: Orca has a command which toggles all (other) Orca commands so that
+# the associated keystroke can by consumed by the native application. For example,
+# if there were an Orca command bound to Alt+Down, normally pressing Alt+Down
+# would cause the Orca command to be used. This would mean Alt+Down could not be
+# used in editors to move the current line of text down. By temporarily disabling
+# Orca commands, Alt+Down would be ignored by Orca and work as expected in the
+# editor. This string is what Orca presents to the user when Orca's commands are
+# being toggled back on.
+BYPASS_MODE_DISABLED = _("Orca command keys on.")
 
 # Translators: Orca uses Speech Dispatcher to present content to users via
 # text-to-speech. Speech Dispatcher has a feature to control how capital
@@ -253,6 +295,23 @@ CLI_LOAD_PREFS = _("Use alternate directory for user preferences")
 # using the '-u, --user-prefs' command line option.
 CLI_PREFS_DIR = _("DIR")
 
+# Translators: This is the description of command line option '--speech-system'
+# which allows you to specify a speech system to use. A speech system provides
+# various synthesizers with different voices and languages.
+# This option can be used to override the configured default speech system.
+CLI_SPEECH_SYSTEM = _("Speech system")
+
+# Translators: This message is presented to the user when the specified speech
+# system is unavailable. A speech system provides various synthesizers with
+# different voices and languages. The first string substituted in is the user-
+# provided speech system. The second string substituted is a comma separated
+# list of avaialable speech systems.
+CLI_SPEECH_SYSTEM_ERROR = _("Speech system “%s” is unavailable (available: %s)")
+
+# Translators: This string indicates to the user what should be provided when
+# using the '--speech-system' command line option.
+CLI_SPEECH_SYSTEM_NAME = _("NAME")
+
 # Translators: This is the description of command line option '-v, --version'
 # which prints the version of Orca. E.g. '1.23.4'.
 CLI_VERSION = _("Version of this application")
@@ -294,7 +353,13 @@ CLI_GUI_SETUP = _("Set up user preferences (GUI version)")
 
 # Translators: This text is the description displayed when Orca is launched
 # from the command line and the help text is displayed.
-CLI_EPILOG = _("Report bugs to orca-list@gnome.org.")
+CLI_EPILOG = _("Report bugs on https://gitlab.gnome.org/GNOME/orca/-/issues.")
+
+# Translators: Orca has a command to present the contents of the clipboard without
+# the user having to switch to a clipboard manager. This message is spoken by Orca
+# before speaking the text which is in the clipboard. The string substitution is
+# for the clipboard contents.
+CLIPBOARD_CONTAINS = _("Clipboard contains: %s")
 
 # Translators: Orca normal speaks the text which was just deleted from a
 # document via command. Depending on the circumstances, that might be a
@@ -472,9 +537,60 @@ CONTAINER_NOT_IN_A = _("Not in a container.")
 # in a container that supports selection, such as a GUI table or a list of icons.
 CONTAINER_SELECTED_ALL = _("all items selected")
 
+# Translators: Orca has a command to report CPU and memory usage. This message
+# is presented to the user when they use this command but Orca was unable to
+# retrieve this information.
+CPU_AND_MEMORY_USAGE_UNKNOWN = _("CPU and memory usage unknown")
+
+# Translators: Orca has a command to report CPU and memory usage levels. This
+# message presents the levels to the user.
+CPU_AND_MEMORY_USAGE_LEVELS = _("CPU: %d%%. Memory: %d%%")
+
+# Translators: Orca has a command for advanced users and developers to clear
+# the AT-SPI cache in case there is stale information due to an application
+# bug. This message is presented when the user tried to clear the cache but
+# an error occurred.
+DEBUG_CLEAR_CACHE_FAILED = _("Clearing cache failed.")
+
+# Translators: Orca has a command for advanced users and developers to clear
+# the AT-SPI cache in case there is stale information due to an application
+# bug. This message is presented when the user performs the command.
+DEBUG_CLEAR_CACHE = _("Clearing cache.")
+
+# Translators: this is a debug message for advanced users and developers. It
+# describes a command to print detailed debugging information about the current
+# state with respect to the accessible applications being used, such as the
+# accessibility tree of the current window, a list of all the running accessible
+# objects, etc. This message is presented to confirm to the user that the snapshot
+# capture has begun.
+DEBUG_CAPTURE_SNAPSHOT_START = _("Capturing debugging snapshot")
+
+# Translators: this is a debug message for advanced users and developers. It
+# describes a command to print detailed debugging information about the current
+# state with respect to the accessible applications being used, such as the
+# accessibility tree of the current window, a list of all the running accessible
+# objects, etc. This message is presented to confirm to the user that the snapshot
+# capture has begun.
+DEBUG_CAPTURE_SNAPSHOT_END = _("Debugging snapshot captured")
+
 # Translators: The "default" button in a dialog box is the button that gets
-# activated when Enter is pressed anywhere within that dialog box.
+# activated when Enter is pressed anywhere within that dialog box. The string
+# substitution is the name of the button (e.g. "OK" or "Close").
 DEFAULT_BUTTON_IS = _("Default button is %s")
+
+# Translators: The "default" button in a dialog box is the button that gets
+# activated when Enter is pressed anywhere within that dialog box. This
+# message is presented when the default button was found but is insensitive /
+# grayed out / cannot be activated. The string substitution is the name of
+# the button (e.g. "OK" or "Close"). When translating "Grayed," please use
+# the same word used for the string in object_properties.py.
+DEFAULT_BUTTON_IS_GRAYED = _("Default button is %s. Grayed")
+
+# Translators: The "default" button in a dialog box is the button that gets
+# activated when Enter is pressed anywhere within that dialog box. Orca has
+# a command to present the default button. This is the message Orca will
+# present if it could not find the default button.
+DEFAULT_BUTTON_NOT_FOUND = _("Default button not found")
 
 # Translators: This string is part of the presentation of an item that includes
 # one or several consecutive subscripted characters. For example, 'X' followed
@@ -488,6 +604,11 @@ DIGITS_SUBSCRIPT =  _(" subscript %s")
 # as 'X superscript 23'.
 DIGITS_SUPERSCRIPT =  _(" superscript %s")
 
+# Translators: this message is presented when the user tries to perform a command
+# specific to dialog boxes, such as presenting the default button, but is not in
+# a dialog.
+DIALOG_NOT_IN_A = _("Not in a dialog")
+
 # Translators: when the user selects (highlights) or unselects text in a
 # document, Orca will speak information about what they have selected or
 # unselected. This message is presented when the user selects the entire
@@ -500,30 +621,6 @@ DOCUMENT_SELECTED_ALL = _("entire document selected")
 # selected but the user presses a key (e.g. an arrow key) causing the
 # selection to be completely removed.
 DOCUMENT_UNSELECTED_ALL = _("entire document unselected")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user selects from the
-# current location to the end of the document by pressing Ctrl+Shift+End.
-DOCUMENT_SELECTED_DOWN = _("document selected from cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user unselects previously
-# selected text by pressing Ctrl+Shift+End.
-DOCUMENT_UNSELECTED_DOWN = _("document unselected from cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user selects from the
-# current location to the start of the document by pressing Ctrl+Shift+Home.
-DOCUMENT_SELECTED_UP = _("document selected to cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user unselects previously
-# selected text by pressing Ctrl+Shift+Home.
-DOCUMENT_UNSELECTED_UP = _("document unselected to cursor position")
 
 # Translators: Orca allows you to dynamically define which row of a spreadsheet
 # or table should be treated as containing column headers. This message is
@@ -600,6 +697,22 @@ FLAT_REVIEW_START = _("Entering flat review.")
 # let the user know he/she just entered flat review.
 FLAT_REVIEW_STOP = _("Leaving flat review.")
 
+# Translators: the 'flat review' feature of Orca allows the blind user to
+# explore the text in a window in a 2D fashion.  That is, Orca treats all
+# the text from all objects in a window (e.g., buttons, labels, etc.) as a
+# sequence of words in a sequence of lines.  This message is presented to
+# let the user know that flat review is being restricted to the current
+# object of interest.
+FLAT_REVIEW_RESTRICTED = _("Flat review restricted to the current object")
+
+# Translators: the 'flat review' feature of Orca allows the blind user to
+# explore the text in a window in a 2D fashion.  That is, Orca treats all
+# the text from all objects in a window (e.g., buttons, labels, etc.) as a
+# sequence of words in a sequence of lines.  This message is presented to
+# let the user know that flat review is unrestricted,
+# that is, the entire window can be explored.
+FLAT_REVIEW_UNRESTRICTED = _("Flat review unrestricted")
+
 # Translators: this means a particular cell in a spreadsheet has a formula
 # (e.g., "=sum(a1:d1)")
 HAS_FORMULA = _("has formula")
@@ -625,6 +738,10 @@ HAS_POPUP_MENU = _("opens menu")
 # which can be expanded or collapsed, similar to the list of folders in an
 # email client.
 HAS_POPUP_TREE = _("opens tree")
+
+# Translators: this message will be presented to indicate the focused object
+# will cause a popup to appear if activated.
+HAS_POPUP = _("opens popup")
 
 # Translators: The following string is spoken to let the user know that he/she
 # is on a link within an image map. An image map is an image/graphic which has
@@ -1180,6 +1297,11 @@ LEAVING_FIGURE = C_("role", "leaving figure.")
 # form and then navigates out of it.
 LEAVING_FORM = _("leaving form.")
 
+# Translators: This message is presented when a user is navigating within a
+# panel and then navigates out of it. A grouping is a container of related
+# widgets.
+LEAVING_GROUPING = _("leaving grouping.")
+
 # Translators: This message is presented when a user is navigating within
 # a type of landmark and then navigates out of it. The word or phrase that
 # follows "leaving" should be consistent with the translation provided for
@@ -1408,32 +1530,6 @@ LEAVING_SUGGESTION = C_("role", "leaving suggestion.")
 # for the corresponding term with context "role" found in object_properties.py
 LEAVING_TOC = C_("role", "leaving table of contents.")
 
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user selects from the
-# current location to the end of the line by pressing Shift+Down.
-LINE_SELECTED_DOWN = _("line selected down from cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user selects from the
-# current location to the start of the line by pressing Shift+Up.
-LINE_SELECTED_UP = _("line selected up from cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user unselects previously
-# selected text from the current location to the end of the paragraph by
-# pressing Shift+Down.
-LINE_UNSELECTED_DOWN = _("line unselected down from cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user unselects previously
-# selected text from the current location to the start of the paragraph by
-# pressing Shift+Up.
-LINE_UNSELECTED_UP = _("line unselected up from cursor position")
-
 # Translators: Orca has a "Learn Mode" that will allow the user to type any key
 # on the keyboard and hear what the effects of that key would be.  The effects
 # might be what Orca would do if it had a handler for the particular key
@@ -1441,18 +1537,6 @@ LINE_UNSELECTED_UP = _("line unselected up from cursor position")
 # have a handler. This message is what is presented in speech and braille when
 # exiting Learn Mode.
 LEARN_MODE_STOP = _("Exiting learn mode.")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user selects from the
-# current location to the start of the line by pressing Ctrl+Shift+Page_Up.
-LINE_SELECTED_LEFT = _("line selected from start to previous cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user selects from the
-# current location to the end of the line by pressing Ctrl+Shift+Page_Down.
-LINE_SELECTED_RIGHT = _("line selected to end from previous cursor position")
 
 # Translators: this indicates that this piece of text is a hypertext link.
 LINK = _("link")
@@ -1545,16 +1629,6 @@ LIVE_REGIONS_LEVEL_OFF = _("setting live region to off")
 # inform the user that Orca's live region's "politeness" level has changed for
 # the current live region.
 LIVE_REGIONS_LEVEL_POLITE = _("setting live region to polite")
-
-# Translators: A live region is an area of a web page that is periodically
-# updated, e.g. stock ticker. http://www.w3.org/TR/wai-aria/terms#def_liveregion
-# The "politeness" level is an indication of when the user wishes to be notified
-# about a change to live region content. Examples include: never ("off"), when
-# idle ("polite"), and when there is a change ("assertive"). Orca has several
-# features to facilitate accessing live regions. This message is presented to
-# inform the user that Orca's live region's "politeness" level has changed for
-# the current live region.
-LIVE_REGIONS_LEVEL_RUDE = _("setting live region to rude")
 
 # Translators: A live region is an area of a web page that is periodically
 # updated, e.g. stock ticker. http://www.w3.org/TR/wai-aria/terms#def_liveregion
@@ -1728,6 +1802,10 @@ MODE_LAYOUT = _("Layout mode.")
 # object-based presentation.
 MODE_OBJECT = _("Object mode.")
 
+# Translators: This message is presented to the user when the command to move
+# the mouse pointer to a particular object is believed to have succeeded.
+MOUSE_MOVED_SUCCESS = _("Pointer moved to object.")
+
 # Translators: Hovering the mouse over certain objects on a web page causes a 
 # new object to appear such as a pop-up menu. Orca has a command will move the
 # user to the object which just appeared as a result of the user hovering the
@@ -1751,6 +1829,36 @@ MOUSE_REVIEW_ENABLED = _("Mouse review enabled.")
 # from getting these objects.
 NAVIGATION_DIALOG_ERROR = _("Error: Could not create list of objects.")
 
+# Translators: the object navigator allows users to explore UI objects presented
+# as a hierarchy. This message is spoken when the current node in the hierarchy
+# has no children.
+NAVIGATOR_NO_CHILDREN = _("No children.")
+
+# Translators: the object navigator allows users to explore UI objects presented
+# as a hierarchy. This message is spoken when the current node in the hierarchy
+# has no next sibling.
+NAVIGATOR_NO_NEXT = _("No next.")
+
+# Translators: the object navigator allows users to explore UI objects presented
+# as a hierarchy. This message is spoken when the current node in the hierarchy
+# has no parent.
+NAVIGATOR_NO_PARENT = _("No parent.")
+
+# Translators: the object navigator allows users to explore UI objects presented
+# as a hierarchy. This message is spoken when the current node in the hierarchy
+# has no previous sibling.
+NAVIGATOR_NO_PREVIOUS = _("No previous.")
+
+# Translators: the object navigator allows users to explore UI objects presented
+# as a hierarchy. This hierarchy can be simplified to aid with navigation. This
+# message is spoken when the simplified view is enabled.
+NAVIGATOR_SIMPLIFIED_ENABLED = _("Simplified navigation enabled.")
+
+# Translators: the object navigator allows users to explore UI objects presented
+# as a hierarchy. This hierarchy can be simplified to aid with navigation. This
+# message is spoken when the simplified view is disabled.
+NAVIGATOR_SIMPLIFIED_DISABLED = _("Simplified navigation disabled.")
+
 # Translators: This message describes a list item in a document. Nesting level
 # is how "deep" the item is (e.g., a level of 2 represents a list item inside a
 # list that's inside another list).
@@ -1760,6 +1868,13 @@ NESTING_LEVEL = _("Nesting level %d")
 # location on a web page. If moving the mouse pointer caused an item to appear
 # such as a pop-up menu, we want to present that fact.
 NEW_ITEM_ADDED = _("New item has been added")
+
+# Translators: Orca has a command which presents a menu with accessible actions
+# that can be performed on the current object. This is the message that Orca
+# presents when the object has no actions. The string substitution will be the
+# name of the object if it has a name (e.g. "OK" or "Close") or it's accessible,
+# localized rolename if it does not.
+NO_ACTIONS_FOUND_ON = _("No actions found on: %s")
 
 # Translators: This is intended to be a short phrase to present the fact that no
 # no accessible component has keyboard focus.
@@ -1820,6 +1935,11 @@ NO_MORE_HEADINGS = _("No more headings.")
 # is a detailed message which will be presented to the user if no more headings
 # at the desired level can be found.
 NO_MORE_HEADINGS_AT_LEVEL = _("No more headings at level %d.")
+
+# Translators: This is for navigating document content by moving from iframe
+# to iframe. This is a detailed message which will be presented to the user
+# if no more iframes can be found.
+NO_MORE_IFRAMES = _("No more internal frames.")
 
 # Translators: This is for navigating document content by moving from image
 # to image. This is a detailed message which will be presented to the user
@@ -1902,24 +2022,9 @@ NOTIFICATION = _("Notification")
 # the list of notifications is reached.
 NOTIFICATION_LIST_BOTTOM = C_("notification", "Bottom")
 
-# Translators: This message is presented to the user to confirm the list of
-# notifications mode is being exited.
-NOTIFICATION_LIST_EXIT = _("Exiting list notification messages mode.")
-
 # Translators: This is a brief message presented to the user when the top of the
 # list of notifications is reached.
 NOTIFICATION_LIST_TOP = C_("notification", "Top")
-
-# Translators: This is a tutorial message for the notification list mode.
-NOTIFICATION_LIST_HELP = _("Press h for help.\n")
-
-# Translators: The following string instructs the user how to navigate within
-# the list notifications mode.
-NOTIFICATION_LIST_TUTORIAL =  \
-            _("Use Up, Down, Home or End to navigate in the list.\n"\
-              "Press Escape to exit.\n"\
-              "Press Space to repeat the last message read.\n"\
-              "Press one digit to read a specific message.\n")
 
 # Translators: This message is presented to the user when the notifications list
 # is empty.
@@ -1976,62 +2081,17 @@ PAGE_LOADING_END = _("Finished loading.")
 # object which has just finished loading (most likely the page's title).
 PAGE_LOADING_END_NAMED = _("Finished loading %s.")
 
+# Translators: This message is presented to the user when the page of the
+# current document changes, e.g. as a result of navigation or scrolling.
+# The string substitution is the number of the current page.
+PAGE_NUMBER = _("Page %d")
+
 # Translators: When the user loads a new web page, they can optionally have Orca
 # automatically summarize details about the page, such as the number of elements
 # (landmarks, forms, links, tables, etc.). The following string precedes the
 # presentation of the summary. The string substitution is a list of items, such
 # as "10 headings, 1 form, 52 links".
 PAGE_SUMMARY_PREFIX = _("Page has %s.")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user selects from the
-# current location to the end of the page by pressing Shift+Page_Down.
-PAGE_SELECTED_DOWN = _("page selected from cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user selects from the
-# current location to the start of the page by pressing Shift+Page_Up.
-PAGE_SELECTED_UP = _("page selected to cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user unselects a previously
-# selected page by pressing Shift+Page_Down.
-PAGE_UNSELECTED_DOWN = _("page unselected from cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user unselects a previously
-# selected page by pressing Shift+Page_Up.
-PAGE_UNSELECTED_UP = _("page unselected to cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user selects from the
-# current location to the end of the paragraph by pressing Ctrl+Shift+Down.
-PARAGRAPH_SELECTED_DOWN = _("paragraph selected down from cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user selects from the
-# current location to the start of the paragraph by pressing Ctrl+Shift+UP.
-PARAGRAPH_SELECTED_UP = _("paragraph selected up from cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user unselects previously
-# selected text from the current location to the end of the paragraph by
-# pressing Ctrl+Shift+Down.
-PARAGRAPH_UNSELECTED_DOWN = _("paragraph unselected down from cursor position")
-
-# Translators: when the user selects (highlights) or unselects text in a
-# document, Orca will speak information about what they have selected or
-# unselected. This message is presented when the user unselects previously
-# selected text from the current location to the start of the paragraph by
-# pressing Ctrl+Shift+UP.
-PARAGRAPH_UNSELECTED_UP = _("paragraph unselected up from cursor position")
 
 # Translators: This message appears in a warning dialog when the user performs
 # the command to get into Orca's preferences dialog when the preferences dialog
@@ -2145,6 +2205,11 @@ SELECTION_DELETED = _("Selection deleted.")
 # which was just inserted.
 SELECTION_RESTORED = _("Selection restored.")
 
+# Translators: This message is presented to the user when text had been
+# selected in a document and no longer is, e.g. as the result of navigating
+# without holding down the shift key.
+SELECTION_REMOVED = _("Text unselected.")
+
 # Translators: Orca has a command which presents the size and position of the
 # current object in pixels. This string refers to the brief/non-verbose output
 # presented in response to the command. The string substitutions are all for
@@ -2164,6 +2229,36 @@ SPEECH_DISABLED = _("Speech disabled.")
 # Translators: This message is presented to the user when speech synthesis
 # has been turned back on.
 SPEECH_ENABLED = _("Speech enabled.")
+
+# Translators: Orca has a sleep mode which causes Orca to essentially behave as
+# if it were not running for a given application. Some use cases include self-
+# voicing apps with associated commands (e.g. ChromeVox) and VMs. In the former
+# case, the self-voicing app is expected to provide all needed commands as well
+# as speech and braille. In the latter case, we want to ensure that Orca's
+# commands and speech/braille do not interfere with that of the VM and any
+# screen reader being used in that VM. Thus when an application is being used
+# in sleep mode, nearly all Orca commands become unbound/free, and nothing is
+# spoken or brailled. But if the user toggles sleep mode off or switches to
+# another application window, Orca commands, speech, and braille immediately
+# resume working. This string is the message Orca presents when sleep mode is
+# disabled by the user. The string substitution is the name of the application.
+# For example "Sleep mode disabled for VirtualBox."
+SLEEP_MODE_DISABLED_FOR = _("Sleep mode disabled for %s.")
+
+# Translators: Orca has a sleep mode which causes Orca to essentially behave as
+# if it were not running for a given application. Some use cases include self-
+# voicing apps with associated commands (e.g. ChromeVox) and VMs. In the former
+# case, the self-voicing app is expected to provide all needed commands as well
+# as speech and braille. In the latter case, we want to ensure that Orca's
+# commands and speech/braille do not interfere with that of the VM and any
+# screen reader being used in that VM. Thus when an application is being used
+# in sleep mode, nearly all Orca commands become unbound/free, and nothing is
+# spoken or brailled. But if the user toggles sleep mode off or switches to
+# another application window, Orca commands, speech, and braille immediately
+# resume working. This string is the message Orca presents when sleep mode is
+# enabled by the user. The string substitution is the name of the application.
+# For example "Sleep mode enabled for VirtualBox."
+SLEEP_MODE_ENABLED_FOR = _("Sleep mode enabled for %s.")
 
 # Translators: This string announces speech rate change.
 SPEECH_FASTER = _("faster.")
@@ -2202,6 +2297,11 @@ SPEECH_VERBOSITY_VERBOSE = C_("Speech", "Verbosity level: verbose")
 # speech synthesis engine to speak the new string well. For example, "Open..."
 # turns into "Open dot dot dot".
 SPOKEN_ELLIPSIS = _(" dot dot dot")
+
+# Translators: This message is presented when the user attempts to use a
+# command specific to a spreadsheet, such as reading the input line, but is
+# not in a spreadsheet.
+SPREADSHEET_NOT_IN_A = _("Not in a spreadsheet.")
 
 # Translators: This message is presented to the user when Orca is launched.
 START_ORCA = _("Screen reader on.")
@@ -2278,6 +2378,16 @@ TABLE_NON_UNIFORM = _("Non-uniform")
 # to table cell. If the user gives a table navigation command but is not in a
 # table, presents this message.
 TABLE_NOT_IN_A = _("Not in a table.")
+
+# Translators: Orca has commands for navigating within a table, e.g. to the
+# next cell in a given direction. This string is the message that will be
+# presented when those commands are disabled.
+TABLE_NAVIGATION_DISABLED = _("Table navigation disabled.")
+
+# Translators: Orca has commands for navigating within a table, e.g. to the
+# next cell in a given direction. This string is the message that will be
+# presented when those commands are enabled.
+TABLE_NAVIGATION_ENABLED = _("Table navigation enabled.")
 
 # Translators: This is a message presented to users when the columns in a table
 # have been reordered.
@@ -2479,6 +2589,20 @@ def cellSpan(rowspan, colspan):
 
     return spanString
 
+def characterCount(count):
+    # Translators: This message describes the number of characters in a string.
+    return ngettext("%d characters", "%d characters", count) % count
+
+def selectedCharacterCount(count):
+    # Translators: This message describes the number of characters that were just
+    # selected in a body of text.
+    return ngettext("%d character selected", "%d characters selected", count) % count
+
+def unselectedCharacterCount(count):
+    # Translators: This message describes the number of characters that were just
+    # unselected in a body of text.
+    return ngettext("%d character unselected", "%d characters unselected", count) % count
+
 def charactersTooLong(count):
     # Translators: People can enter a string of text that is too wide to be
     # fully displayed in a spreadsheet cell. This message will be spoken if
@@ -2554,8 +2678,54 @@ def leavingNLists(count):
     return ngettext("Leaving %d list.", "Leaving %d lists.", count) % count
 
 def listItemCount(count):
+    if count == -1:
+        # Translators: This message describes a list in web content for which the
+        # size is unknown. Examples include unlimited scrolling news/article feeds
+        # on social media sites, and message lists on services such as gmail where
+        # you're currently viewing messages 1-100 out of some huge, unspecified
+        # number. Normally Orca announces "list with n items" when the count is
+        # known. This is the corresponding message for the unknown-count scenario.
+        return _("List of unknown size")
+
     # Translators: This message describes a bulleted or numbered list.
     return ngettext("List with %d item", "List with %d items", count) % count
+
+def nestedListItemCount(count):
+    # Translators: This message describes the number of items of a bulleted or numbered list
+    # that is inside of another list.
+    return ngettext("Nested list with %d item", "Nested list with %d items", count) % count
+
+def feedArticleCount(count):
+    if count == -1:
+        # Translators: This message describes a news/article feed whose size is
+        # unknown, such as can be found on social media sites that have unlimited
+        # scrolling, adding and/or removing items as the user moves up or down.
+        # Normally Orca announces "feed with n articles" when the count is known.
+        # This is the corresponding message for the unknown-count scenario.
+        return _("Feed of unknown size")
+
+    # Translators: This message describes the number of articles (news items,
+    # social media posts, etc.) in a feed.
+    return ngettext("Feed with %d article", "Feed with %d articles", count) % count
+
+def descriptionListTermCount(count):
+    # Translators: This message describes a description list.
+    # See https://developer.mozilla.org/en-US/docs/Web/HTML/Element/dl
+    # Note that the "term" here corresponds to the "dt" element
+    return ngettext("Description list with %d term",
+                    "Description list with %d terms", count) % count
+
+def tabListItemCount(count):
+    # Translators: A GtkNotebook (https://docs.gtk.org/gtk4/class.Notebook.html) is an
+    # example of a "tab list". This message describes the tab list to the user.
+    return ngettext("Tab list with %d tab", "Tab list with %d tabs", count) % count
+
+def valueCountForTerm(count):
+    # Translators: This message describes a description list.
+    # A given term ("dt" element) can have 0 or more values ("dd" elements).
+    # This message presents the number values a particular term has.
+    # See https://developer.mozilla.org/en-US/docs/Web/HTML/Element/dl
+    return ngettext("%d value", "%d values", count) % count
 
 def mathTableSize(nRows, nColumns):
     # Translators: this represents the number of rows in a mathematical table.
@@ -2660,16 +2830,70 @@ def tableCount(count, onlyIfFound=True):
     return ngettext("%d table", "%d tables", count) % count
 
 def tableSize(nRows, nColumns):
+    if nRows == -1:
+        if nColumns == -1:
+            # Translators: This message describes a table for which both the
+            # number of rows and the number of columns are unknown. Normally
+            # Orca announces the table dimensions (e.g. "table with 100 rows
+            # 15 columns"). When both counts are unknown, it presents this.
+            return _("table of unknown size")
+
+        # Translators: This message describes a table for which the number of
+        # rows is unknown, but the number of columns is known. This might occur
+        # in a vertically infinitely scrollable table or grid on the web.
+        return ngettext("table with %d column, row count unknown",
+                        "table with %d columns, row count unknown",
+                        nColumns) % nColumns
+
+    if nColumns == -1:
+        # Translators: This message describes a table for which the number of
+        # columns is unknown, but the number of rows is known. This might occur
+        # in a horizontally infinitely scrollable table or grid on the web.
+        return ngettext("table with %d row, column count unknown",
+                        "table with %d rows, column count unknown",
+                        nRows) % nRows
+
     # Translators: this represents the number of rows in a table.
     rowString = ngettext("table with %d row",
                          "table with %d rows",
                          nRows) % nRows
+
     # Translators: this represents the number of columns in a table.
     colString = ngettext("%d column",
                          "%d columns",
                          nColumns) % nColumns
 
     return rowString + " " + colString
+
+def secondsAgo(count):
+    # Translators: This message informs the user how long ago something took
+    # place in terms of seconds.
+    return ngettext("%d second ago", "%d seconds ago", count) % count
+
+def minutesAgo(count):
+    # Translators: This message informs the user how long ago something took
+    # place in terms of minutes.
+    return ngettext("%d minute ago", "%d minutes ago", count) % count
+
+def hoursAgo(count):
+    # Translators: This message informs the user how long ago something took
+    # place in terms of hours.
+    return ngettext("%d hour ago", "%d hours ago", count) % count
+
+def daysAgo(count):
+    # Translators: This message informs the user how long ago something took
+    # place in terms of days.
+    return ngettext("%d day ago", "%d days ago", count) % count
+
+def memoryUsageGB(used, total):
+    # Translators: Orca has a command to report CPU and memory usage levels. This
+    # message presents the amount of memory used and total amount in GB.
+    return f"{used:.1f} of {total:.1f} GB used."
+
+def memoryUsageMB(used, total):
+    # Translators: Orca has a command to report CPU and memory usage levels. This
+    # message presents the amount of memory used and total amount in MB.
+    return f"{used:.1f} of {total:.1f} MB used."
 
 def unvisitedLinkCount(count, onlyIfFound=True):
     if not count and onlyIfFound:

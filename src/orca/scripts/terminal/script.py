@@ -25,10 +25,8 @@ __copyright__ = "Copyright (c) 2016 Igalia, S.L."
 __license__   = "LGPL"
 
 from orca import debug
-from orca import orca
-from orca import orca_state
-from orca import speech
 from orca.scripts import default
+from orca.ax_text import AXText
 
 from .braille_generator import BrailleGenerator
 from .speech_generator import SpeechGenerator
@@ -39,7 +37,7 @@ class Script(default.Script):
 
     def __init__(self, app):
         super().__init__(app)
-        self.presentIfInactive = False
+        self.present_if_inactive = False
 
     def deactivate(self):
         """Called when this script is deactivated."""
@@ -47,120 +45,82 @@ class Script(default.Script):
         self.utilities.clearCache()
         super().deactivate()
 
-    def getBrailleGenerator(self):
+    def get_braille_generator(self):
         """Returns the braille generator for this script."""
 
         return BrailleGenerator(self)
 
-    def getSpeechGenerator(self):
+    def get_speech_generator(self):
         """Returns the speech generator for this script."""
 
         return SpeechGenerator(self)
 
-    def getUtilities(self):
-        """Returns the utilites for this script."""
+    def get_utilities(self):
+        """Returns the utilities for this script."""
 
         return Utilities(self)
 
-    def onFocus(self, event):
-        """Callback for focus: accessibility events."""
-
-        # https://bugzilla.gnome.org/show_bug.cgi?id=748311
-        orca.setLocusOfFocus(event, event.source)
-
-    def onTextDeleted(self, event):
+    def on_text_deleted(self, event):
         """Callback for object:text-changed:delete accessibility events."""
 
         if self.utilities.treatEventAsNoise(event):
             msg = "TERMINAL: Deletion is believed to be noise"
-            debug.println(debug.LEVEL_INFO, msg, True)
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return
 
-        super().onTextDeleted(event)
+        super().on_text_deleted(event)
 
-    def onTextInserted(self, event):
+    def on_text_inserted(self, event):
         """Callback for object:text-changed:insert accessibility events."""
 
         if not self.utilities.treatEventAsCommand(event):
             msg = "TERMINAL: Passing along event to default script."
-            debug.println(debug.LEVEL_INFO, msg, True)
-            super().onTextInserted(event)
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            super().on_text_inserted(event)
             return
 
         msg = "TERMINAL: Insertion is believed to be due to terminal command"
-        debug.println(debug.LEVEL_INFO, msg, True)
+        debug.print_message(debug.LEVEL_INFO, msg, True)
 
-        self.updateBraille(event.source)
+        self.update_braille(event.source)
 
         newString = self.utilities.insertedText(event)
         if len(newString) == 1:
-            self.speakCharacter(newString)
+            self.speak_character(newString)
         else:
-            voice = self.speechGenerator.voice(string=newString)
-            speech.speak(newString, voice)
+            voice = self.speech_generator.voice(obj=event.source, string=newString)
+            self.speakMessage(newString, voice=voice)
 
-        if self.flatReviewContext:
+        if self.get_flat_review_presenter().is_active():
+            msg = "TERMINAL: Flat review presenter is active. Ignoring insertion"
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return
 
-        try:
-            text = event.source.queryText()
-        except:
-            pass
-        else:
-            self._saveLastCursorPosition(event.source, text.caretOffset)
-            self.utilities.updateCachedTextSelection(event.source)
+        offset = AXText.get_caret_offset(event.source)
+        self._saveLastCursorPosition(event.source, offset)
+        AXText.update_cached_selected_text(event.source)
 
     def presentKeyboardEvent(self, event):
-        if orca_state.learnModeEnabled or not event.isPrintableKey():
+        if not event.is_printable_key():
             return super().presentKeyboardEvent(event)
 
-        if event.isPressedKey():
+        if event.is_pressed_key():
             return False
 
         self._sayAllIsInterrupted = False
         self.utilities.clearCachedCommandState()
-        if event.shouldEcho == False or event.isOrcaModified() or event.isCharacterEchoable():
+        if not event.should_echo() or event.is_orca_modified() or event.is_character_echoable():
             return False
 
         # We have no reliable way of knowing a password is being entered into
         # a terminal -- other than the fact that the text typed isn't there.
-        try:
-            text = event.getObject().queryText()
-            offset = text.caretOffset
-            prevChar = text.getText(offset - 1, offset)
-            char = text.getText(offset, offset + 1)
-        except:
+        char, start = AXText.get_character_at_offset(event.get_object())[0:2]
+        prevChar = AXText.get_character_at_offset(event.get_object(), start - 1)[0]
+        string = event.get_key_name()
+        if string not in [prevChar, " ", char]:
             return False
 
-        string = event.event_string
-        if string not in [prevChar, "space", char]:
-            return False
-
-        msg = "TERMINAL: Presenting keyboard event %s" % string
-        debug.println(debug.LEVEL_INFO, msg, True)
-
-        voice = self.speechGenerator.voice(string=string)
-        speech.speakKeyEvent(event, voice)
-        return True
-
-    def skipObjectEvent(self, event):
-        if event.type == "object:text-changed:insert":
-            return False
-
-        newEvent, newTime = None, 0
-        if event.type == "object:text-changed:delete":
-            if self.utilities.isBackSpaceCommandTextDeletionEvent(event):
-                return False
-
-            newEvent, newTime = self.eventCache.get("object:text-changed:insert", [None, 0])
-
-        if newEvent is None or newEvent.source != event.source:
-            return super().skipObjectEvent(event)
-
-        if event.detail1 != newEvent.detail1:
-            return False
-
-        data = "\n%s%s" % (" " * 11, str(newEvent).replace("\t", " " * 11))
-        msg = "TERMINAL: Skipping due to more recent event at offset%s" % data
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["TERMINAL: Presenting keyboard event", string]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+        self.speak_key_event(event)
         return True

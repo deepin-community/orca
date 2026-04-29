@@ -2,19 +2,20 @@
 # Copyright (C) 2020 orca's COPYRIGHT HOLDER
 # This file is distributed under the same license as the orca package.
 #
-# Yuri Chornoivan <yurchor@ukr.net>, 2020, 2021.
+# Yuri Chornoivan <yurchor@ukr.net>, 2020, 2021, 2023.
 msgid ""
 msgstr ""
 "Project-Id-Version: orca master\n"
-"POT-Creation-Date: 2021-08-25 11:17+0000\n"
-"PO-Revision-Date: 2021-08-26 13:18+0300\n"
+"POT-Creation-Date: 2023-08-05 19:09+0000\n"
+"PO-Revision-Date: 2023-08-06 15:39+0300\n"
 "Last-Translator: Yuri Chornoivan <yurchor@ukr.net>\n"
 "Language-Team: Ukrainian <trans-uk@lists.fedoraproject.org>\n"
 "Language: uk\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=4; plural=n==1 ? 3 : n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2;\n"
+"Plural-Forms: nplurals=4; plural=n==1 ? 3 : n%10==1 && n%100!=11 ? 0 : n"
+"%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2;\n"
 "X-Generator: Lokalize 20.12.0\n"
 
 #. Put one translator per line, in the form NAME <EMAIL>, YEAR1, YEAR2
@@ -56,7 +57,7 @@ msgstr "Команди для встановлення закладок і от�
 #: C/howto_profiles.page:8 C/howto_setting_up_orca.page:12
 #: C/howto_structural_navigation.page:12 C/howto_tables.page:10
 #: C/howto_text_attributes.page:10 C/howto_the_orca_modifier.page:11
-#: C/howto_toggling_caps_lock.page:8 C/howto_whereami.page:10 C/index.page:9
+#: C/howto_toggling_caps_lock.page:8 C/howto_whereami.page:10 C/index.page:10
 #: C/introduction.page:10 C/preferences_braille.page:11
 #: C/preferences_chat.page:11 C/preferences_web.page:12
 #: C/preferences_general.page:11 C/preferences_introduction.page:8
@@ -86,7 +87,7 @@ msgstr "Joanmarie Diggs"
 #: C/howto_setting_up_orca.page:16 C/howto_structural_navigation.page:16
 #: C/howto_tables.page:14 C/howto_text_attributes.page:14
 #: C/howto_the_orca_modifier.page:15 C/howto_toggling_caps_lock.page:12
-#: C/howto_whereami.page:14 C/index.page:13 C/introduction.page:14
+#: C/howto_whereami.page:14 C/index.page:14 C/introduction.page:14
 #: C/preferences_braille.page:15 C/preferences_chat.page:15
 #: C/preferences_web.page:16 C/preferences_general.page:15
 #: C/preferences_introduction.page:12 C/preferences_key_bindings.page:16
@@ -284,9 +285,9 @@ msgstr ""
 "Наведеними нижче командами можна скористатися для доступу до відомостей у "
 "клієнтах миттєвого обміну повідомленнями і IRC, підтримку яких передбачено у "
 "<app>Orca</app>. Ви можете зауважити, що декілька з цих команд не пов'язано "
-"із клавіатурними скороченнями. Будь ласка, ознайомтеся з розділом <link xref="
-"\"howto_key_bindings\">зміна клавіатурних прив'язок</link>, щоб дізнатися, "
-"як пов'язати ці команди із натисканням комбінацій клавіш."
+"із клавіатурними скороченнями. Будь ласка, ознайомтеся з розділом <link "
+"xref=\"howto_key_bindings\">зміна клавіатурних прив'язок</link>, щоб "
+"дізнатися, як пов'язати ці команди із натисканням комбінацій клавіш."
 
 #. (itstool) path: item/p
 #: C/commands_chat.page:30
@@ -429,7 +430,8 @@ msgstr ""
 
 #. (itstool) path: item/p
 #: C/commands_controlling_orca.page:73
-msgid "Enter Learn Mode: <keyseq><key>Orca Modifier</key><key>H</key></keyseq>"
+msgid ""
+"Enter Learn Mode: <keyseq><key>Orca Modifier</key><key>H</key></keyseq>"
 msgstr ""
 "Вхід до режиму навчання: <keyseq><key>Модифікатор Orca</key><key>H</key></"
 "keyseq>"
@@ -510,9 +512,10 @@ msgid ""
 "you to search the <link xref=\"howto_flat_review\">Flat Review</link> "
 "context for elements located within the current window."
 msgstr ""
-"За допомогою реалізованої в <app>Orca</app> <link xref=\"howto_orca_find"
-"\">можливості пошуку</link> ви можете шукати контекст <link xref="
-"\"howto_flat_review\">режиму огляду</link> для елементів у поточному вікні."
+"За допомогою реалізованої в <app>Orca</app> <link "
+"xref=\"howto_orca_find\">можливості пошуку</link> ви можете шукати контекст "
+"<link xref=\"howto_flat_review\">режиму огляду</link> для елементів у "
+"поточному вікні."
 
 #. (itstool) path: item/p
 #: C/commands_find.page:27
@@ -609,9 +612,9 @@ msgstr ""
 "Orca розроблено для просторового перегляду елементів, які показано на "
 "екрані. Вони також надають доступу до читання поточного рядка, слова або "
 "символу при навігації текстом документа. Більшість цих команд пов'язано із "
-"комбінаціями клавіш. Будь ласка, ознайомтеся із розділом щодо <link xref="
-"\"howto_key_bindings\">зміни клавіатурних прив'язок</link>, щоб дізнатися "
-"про те, як пов'язати непов'язані команди із комбінаціями клавіш."
+"комбінаціями клавіш. Будь ласка, ознайомтеся із розділом щодо <link "
+"xref=\"howto_key_bindings\">зміни клавіатурних прив'язок</link>, щоб "
+"дізнатися про те, як пов'язати непов'язані команди із комбінаціями клавіш."
 
 #. (itstool) path: section/title
 #: C/commands_flat_review.page:29
@@ -961,7 +964,8 @@ msgstr "Робоча станція: <keyseq><key>3 на ЦБ</key></keyseq>"
 #. (itstool) path: item/p
 #: C/commands_flat_review.page:155
 msgid "Laptop: <keyseq><key>Orca Modifier</key><key>Period</key></keyseq>"
-msgstr "Ноутбук: <keyseq><key>Модифікатор Orca</key><key>крапка</key></keyseq>"
+msgstr ""
+"Ноутбук: <keyseq><key>Модифікатор Orca</key><key>крапка</key></keyseq>"
 
 #. (itstool) path: item/p
 #: C/commands_flat_review.page:158
@@ -1199,8 +1203,8 @@ msgstr ""
 "скорочення залежать від того, користуєтеся стаціонарним комп'ютером (робочою "
 "станцією) чи ноутбуком — або, точніше, користуєтеся клавіатурною розкладкою "
 "<app>Orca</app> для робочої станції чи розкладкою клавіатури для ноутбука. "
-"Докладніші відомості можна знайти у розділі <link xref="
-"\"howto_keyboard_layout\">Розкладка клавіатури</link>."
+"Докладніші відомості можна знайти у розділі <link "
+"xref=\"howto_keyboard_layout\">Розкладка клавіатури</link>."
 
 #. (itstool) path: item/p
 #: C/commands_mouse.page:41
@@ -1294,7 +1298,7 @@ msgid "<app>Orca</app>'s Commands"
 msgstr "Команди <app>Orca</app>"
 
 #. (itstool) path: section/title
-#: C/commands.page:17 C/index.page:36
+#: C/commands.page:17 C/index.page:35
 msgid "Getting Started"
 msgstr "Початкові зауваження"
 
@@ -1309,7 +1313,7 @@ msgid "Reading Web Pages and Other Documents"
 msgstr "Читання вебсторінок та інших документів"
 
 #. (itstool) path: section/title
-#: C/commands.page:26 C/index.page:42
+#: C/commands.page:26 C/index.page:41
 msgid "Reviewing and Interacting with Screen Contents"
 msgstr "Перегляд і взаємодія із вмістом екрана"
 
@@ -1415,9 +1419,9 @@ msgid ""
 "The following <app>Orca</app> <link xref=\"commands_flat_review\">Flat "
 "Review Commands</link> can be used to read your current location:"
 msgstr ""
-"Наведеними нижче командами <app>Orca</app> для <link xref="
-"\"commands_flat_review\">загального перегляду</link> можна скористатися для "
-"читання вашої поточної позиції:"
+"Наведеними нижче командами <app>Orca</app> для <link "
+"xref=\"commands_flat_review\">загального перегляду</link> можна скористатися "
+"для читання вашої поточної позиції:"
 
 #. (itstool) path: item/p
 #: C/commands_reading.page:46
@@ -1561,22 +1565,14 @@ msgstr "Параметри посилання"
 
 #. (itstool) path: section/p
 #: C/commands_reading.page:231
-#| msgid ""
-#| "If you are on a link, <app>Orca</app>'s Basic Where Am I command can be "
-#| "used to announce the details associated with the link such as the link "
-#| "type, if the link is visited, the site description, and file size. If you "
-#| "would instead prefer dedicated command for this purpose, you can bind "
-#| "<app>Orca</app>'s Speak Link Details command to a keystroke. Please see "
-#| "<link xref=\"howto_key_bindings\"> Modifying Keybindings</link> for "
-#| "information on how to do so."
 msgid ""
 "If you are on a link, <app>Orca</app>'s Basic Where Am I command can be used "
 "to announce the details associated with the link such as the link type, if "
 "the link is visited, the site description, and file size. If you would "
 "instead prefer a dedicated command for this purpose, you can bind <app>Orca</"
-"app>'s Speak Link Details command to a keystroke. Please see <link xref="
-"\"howto_key_bindings\"> Modifying Keybindings</link> for information on how "
-"to do so."
+"app>'s Speak Link Details command to a keystroke. Please see <link "
+"xref=\"howto_key_bindings\"> Modifying Keybindings</link> for information on "
+"how to do so."
 msgstr ""
 "Якщо курсор перебуває на посиланні, базовою командою визначення позиції "
 "<app>Orca</app> можна буде скористатися для озвучення параметрів посилання, "
@@ -1658,15 +1654,16 @@ msgstr ""
 #: C/commands_reading.page:281
 msgid ""
 "<app>Orca</app> provides a command to switch between Layout mode and Object "
-"mode. This command is unbound by default. Please see <link xref="
-"\"howto_key_bindings\">Modifying Keybindings</link> for information on how "
-"to bind unbound commands."
+"mode. This command is unbound by default. Please see <link "
+"xref=\"howto_key_bindings\">Modifying Keybindings</link> for information on "
+"how to bind unbound commands."
 msgstr ""
 "У <app>Orca</app> передбачено команду для перемикання між режимом "
 "компонування і режимом об'єктів. Типово, цю команду не пов'язано із "
-"комбінацією клавіш. Будь ласка, ознайомтеся із розділом щодо <link xref="
-"\"howto_key_bindings\">зміни клавіатурних скорочень</link>, щоб дізнатися "
-"про те, як можна визначити комбінації клавіш для непов'язаних команд."
+"комбінацією клавіш. Будь ласка, ознайомтеся із розділом щодо <link "
+"xref=\"howto_key_bindings\">зміни клавіатурних скорочень</link>, щоб "
+"дізнатися про те, як можна визначити комбінації клавіш для непов'язаних "
+"команд."
 
 #. (itstool) path: item/p
 #: C/commands_reading.page:288
@@ -1706,9 +1703,10 @@ msgid ""
 msgstr ""
 "Наведеними нижче командами можна скористатися для налаштовування озвучування "
 "у <app>Orca</app>. Ви можете помітити, що деякі з цих команд «не пов'язано» "
-"із комбінаціями клавіш. Будь ласка, ознайомтеся із розділом щодо <link xref="
-"\"howto_key_bindings\">зміни клавіатурних скорочень</link>, щоб дізнатися "
-"про те, як можна визначити комбінації клавіш для непов'язаних команд."
+"із комбінаціями клавіш. Будь ласка, ознайомтеся із розділом щодо <link "
+"xref=\"howto_key_bindings\">зміни клавіатурних скорочень</link>, щоб "
+"дізнатися про те, як можна визначити комбінації клавіш для непов'язаних "
+"команд."
 
 #. (itstool) path: item/p
 #: C/commands_speech_settings.page:29
@@ -1979,13 +1977,11 @@ msgstr "Форми"
 #. (itstool) path: item/p
 #: C/commands_structural_navigation.page:133
 msgid ""
-"Next and previous form field: <keyseq><key>Orca Modifier</key><key>Tab</"
-"key></keyseq> and <keyseq><key>Orca Modifier</key><key>Shift</key><key>Tab</"
-"key></keyseq>"
+"Next and previous form field: <keyseq><key>F</key></keyseq> and "
+"<keyseq><key>Shift</key><key>F</key></keyseq>"
 msgstr ""
-"Наступне і попереднє поле форми: <keyseq><key>Модифікатор Orca</"
-"key><key>Tab</key></keyseq> і <keyseq><key>Модифікатор Orca</key><key>Shift</"
-"key><key>Tab</key></keyseq>"
+"Наступне і попереднє поле форми: <keyseq><key>F</key></keyseq> і "
+"<keyseq><key>Shift</key><key>F</key></keyseq>"
 
 #. (itstool) path: item/p
 #: C/commands_structural_navigation.page:140
@@ -2424,9 +2420,9 @@ msgstr "Команди навігації у таблиці"
 #. (itstool) path: page/p
 #: C/commands_table.page:20
 msgid ""
-"Orca's support for navigation by table cell is part of its <link xref="
-"\"commands_structural_navigation#tables\">Structural Navigation commands</"
-"link>. In addition you can:"
+"Orca's support for navigation by table cell is part of its <link "
+"xref=\"commands_structural_navigation#tables\">Structural Navigation "
+"commands</link>. In addition you can:"
 msgstr ""
 "У Orca передбачено підтримку навігації комірками таблиці як частину її <link "
 "xref=\"commands_structural_navigation#tables\">команд для навігації "
@@ -2506,8 +2502,10 @@ msgstr "Отримання даних щодо часу і дати"
 
 #. (itstool) path: item/p
 #: C/commands_time_date_notifications.page:28
-msgid "Present the time: <keyseq><key>Orca Modifier</key><key>T</key></keyseq>"
-msgstr "Вимовити час: <keyseq><key>Модифікатор Orca</key><key>T</key></keyseq>"
+msgid ""
+"Present the time: <keyseq><key>Orca Modifier</key><key>T</key></keyseq>"
+msgstr ""
+"Вимовити час: <keyseq><key>Модифікатор Orca</key><key>T</key></keyseq>"
 
 #. (itstool) path: item/p
 #: C/commands_time_date_notifications.page:33
@@ -2533,9 +2531,10 @@ msgid ""
 msgstr ""
 "У Orca передбачено три непов'язані із комбінаціями клавіш команди для "
 "доступу до раніше показаних <link xref=\"howto_notifications\">сповіщень</"
-"link>. Будь ласка, ознайомтеся із розділом щодо <link xref="
-"\"howto_key_bindings\">зміни клавіатурних скорочень</link>, щоб дізнатися "
-"про те, як можна визначити комбінації клавіш для непов'язаних команд."
+"link>. Будь ласка, ознайомтеся із розділом щодо <link "
+"xref=\"howto_key_bindings\">зміни клавіатурних скорочень</link>, щоб "
+"дізнатися про те, як можна визначити комбінації клавіш для непов'язаних "
+"команд."
 
 #. (itstool) path: item/p
 #: C/commands_time_date_notifications.page:50
@@ -2549,6 +2548,11 @@ msgstr "Прочитати попереднє сповіщення: (не пов
 
 #. (itstool) path: item/p
 #: C/commands_time_date_notifications.page:56
+msgid "Present the next notification message: (Unbound)"
+msgstr "Прочитати наступне сповіщення: (не пов'язано)"
+
+#. (itstool) path: item/p
+#: C/commands_time_date_notifications.page:59
 msgid "Present list of all notification messages: (Unbound)"
 msgstr "Прочитати список усіх сповіщень: (не пов'язано)"
 
@@ -2705,8 +2709,8 @@ msgstr ""
 "роботи з програмою. Навігацію може бути засновано на номері закладки, якщо "
 "ви хочете перейти безпосередньо до певного елемента. Крім того, ви можете "
 "переходити до наступної або попередньої закладки, так само, як можна "
-"переходити до об'єктів у <link xref=\"howto_structural_navigation"
-"\">навігації структурою</link>."
+"переходити до об'єктів у <link "
+"xref=\"howto_structural_navigation\">навігації структурою</link>."
 
 #. (itstool) path: item/p
 #: C/howto_bookmarks.page:39
@@ -2722,9 +2726,9 @@ msgstr ""
 "вебсторінці, яку ви читаєте. Середовище, у якому ви перебуваєте, визначає "
 "дії, які виконуватимуться при навігації закладками: якщо ви працюєте із "
 "вебсторінкою, курсор буде пересунуто на закладку, отже, ви зможете "
-"продовжити читання; якщо ж це не так, буде задіяно режим <link xref="
-"\"howto_flat_review\">загального перегляду</link>, а закладка стане поточним "
-"елементом перегляду."
+"продовжити читання; якщо ж це не так, буде задіяно режим <link "
+"xref=\"howto_flat_review\">загального перегляду</link>, а закладка стане "
+"поточним елементом перегляду."
 
 #. (itstool) path: page/p
 #: C/howto_bookmarks.page:50
@@ -2768,7 +2772,8 @@ msgstr ""
 
 #. (itstool) path: item/p
 #: C/howto_documents.page:26
-msgid "Use <key>Left</key> and <key>Right</key> to move and read by character."
+msgid ""
+"Use <key>Left</key> and <key>Right</key> to move and read by character."
 msgstr ""
 "Скористайтеся клавішами <key>стрілка ліворуч</key> і <key>стрілка праворуч</"
 "key> для пересування і читання тексту за окремими символами."
@@ -2820,8 +2825,8 @@ msgstr ""
 msgid ""
 "In addition to reading a document by caret navigation, you may find it "
 "helpful to read, spell, and obtain the Unicode value for the current text. "
-"You can do these things through <app>Orca</app>'s <link xref="
-"\"howto_flat_review\">Flat Review feature</link>."
+"You can do these things through <app>Orca</app>'s <link "
+"xref=\"howto_flat_review\">Flat Review feature</link>."
 msgstr ""
 "Окрім читання документа з використанням навігації за допомогою курсора, вам "
 "може бути корисним читання, вимова та отримання значень Юнікоду для "
@@ -2880,16 +2885,16 @@ msgid ""
 "The \"flattened\" contents, also known as the Flat Review context, can be "
 "<link xref=\"commands_flat_review\">navigated</link> by line, by word, by "
 "character, and by object. In addition, you can perform a left-click or right-"
-"click on the object being reviewed. Finally, you can use <link xref="
-"\"howto_orca_find\">Orca Find</link>, a Flat-Review-based feature to search "
-"the active window's contents."
+"click on the object being reviewed. Finally, you can use <link "
+"xref=\"howto_orca_find\">Orca Find</link>, a Flat-Review-based feature to "
+"search the active window's contents."
 msgstr ""
 "Таким «сплощеним» переглядом, який також називатимемо контекстом загального "
 "перегляду, можна <link xref=\"commands_flat_review\">пересуватися</link> за "
 "рядками, за словами, за символами та за об'єктами. Крім того, ви можете "
 "виконувати клацання лівою кнопкою миші або правою кнопкою миші на об'єкті, "
-"який переглядаєте. Нарешті, ви можете скористатися <link xref="
-"\"howto_orca_find\">пошуком Orca</link>, можливістю, яку засновано на "
+"який переглядаєте. Нарешті, ви можете скористатися <link "
+"xref=\"howto_orca_find\">пошуком Orca</link>, можливістю, яку засновано на "
 "загальному перегляді, для пошуку у вмісті активного вікна."
 
 #. (itstool) path: page/p
@@ -2981,9 +2986,9 @@ msgid ""
 "Use <app>Orca</app>'s <link xref=\"commands_structural_navigation#forms\"> "
 "structural navigation commands for forms</link>."
 msgstr ""
-"Скористатися вбудованими до <app>Orca</app> <link xref="
-"\"commands_structural_navigation#forms\">командами навігації структурою для "
-"форм</link>."
+"Скористатися вбудованими до <app>Orca</app> <link "
+"xref=\"commands_structural_navigation#forms\">командами навігації структурою "
+"для форм</link>."
 
 #. (itstool) path: item/p
 #: C/howto_forms.page:43
@@ -3037,9 +3042,9 @@ msgid ""
 "structural navigation commands for forms</link> to move to the next or "
 "previous form field."
 msgstr ""
-"Скористайтеся вбудованими до <app>Orca</app> <link xref="
-"\"commands_structural_navigation#forms\">командами навігації структурою для "
-"форм</link>, щоб перейти до наступного або попереднього поля форми."
+"Скористайтеся вбудованими до <app>Orca</app> <link "
+"xref=\"commands_structural_navigation#forms\">командами навігації структурою "
+"для форм</link>, щоб перейти до наступного або попереднього поля форми."
 
 #. (itstool) path: item/p
 #: C/howto_forms.page:79
@@ -3100,7 +3105,7 @@ msgstr "Прив'язка непов'язаної команди"
 #. (itstool) path: item/p
 #: C/howto_key_bindings.page:23 C/howto_key_bindings.page:60
 #: C/howto_key_bindings.page:92 C/howto_key_bindings.page:113
-#: C/howto_keyboard_layout.page:45 C/howto_the_orca_modifier.page:53
+#: C/howto_keyboard_layout.page:45
 msgid ""
 "Get into the <link xref=\"preferences\">Orca Preferences</link> dialog by "
 "pressing <keyseq><key>Orca Modifier</key><key>Space</key></keyseq>."
@@ -3409,8 +3414,8 @@ msgid ""
 "Live regions have an associated \"politeness\" level which is set by the "
 "author as a means to convey the importance of the information and to suggest "
 "when users should be informed by their assistive technology of updates made "
-"within that region. Live regions can be \"off\", \"polite\", or \"assertive"
-"\" to the point of being \"rude.\""
+"within that region. Live regions can be \"off\", \"polite\", or "
+"\"assertive\" to the point of being \"rude.\""
 msgstr ""
 "Із інтерактивними областями пов'язано рівень «ввічливості», який "
 "встановлюється автором сторінки як міра важливості інформації або для "
@@ -3480,8 +3485,8 @@ msgstr "Озвучування елементів під вказівником 
 #: C/howto_mouse_review.page:16
 msgid ""
 "<app>Orca</app>'s Mouse Review feature causes <app>Orca</app> to present the "
-"object under the mouse pointer. Unlike <app>Orca</app>'s <link xref="
-"\"howto_flat_review\">Flat Review</link> feature, Mouse Review is not "
+"object under the mouse pointer. Unlike <app>Orca</app>'s <link "
+"xref=\"howto_flat_review\">Flat Review</link> feature, Mouse Review is not "
 "limited to the active window; instead, <app>Orca</app> will attempt to "
 "identify what accessible object, if any, is visually under the pointer as "
 "you move the mouse. If you have moved the pointer over an accessible object "
@@ -3505,11 +3510,12 @@ msgid ""
 "Because enabling Mouse Review causes <app>Orca</app> to listen for, and then "
 "process, all changes in the position of the Mouse Pointer, this feature is "
 "disabled by default. To have it always enabled, check the <gui>Speak object "
-"under mouse</gui> checkbox found on the <link xref=\"preferences_general"
-"\">General page of <app>Orca</app>'s Preferences dialog</link>. In addition, "
-"you will find an unbound command named <gui>Toggle mouse review mode</gui> "
-"on the <link xref=\"preferences_key_bindings\">Key Bindings page</link> of "
-"that same dialog box. By binding this command, as described in the <link "
+"under mouse</gui> checkbox found on the <link "
+"xref=\"preferences_general\">General page of <app>Orca</app>'s Preferences "
+"dialog</link>. In addition, you will find an unbound command named "
+"<gui>Toggle mouse review mode</gui> on the <link "
+"xref=\"preferences_key_bindings\">Key Bindings page</link> of that same "
+"dialog box. By binding this command, as described in the <link "
 "xref=\"howto_key_bindings\">Introduction to Key Bindings</link>, you can "
 "enable and disable Mouse Review on an as-needed basis."
 msgstr ""
@@ -3520,12 +3526,12 @@ msgstr ""
 "gui> на <link xref=\"preferences_general\">сторінці «Загальне» вікна "
 "параметрів роботи <app>Orca</app></link>. Крім того, ви можете скористатися "
 "непов'язаною із комбінацією клавіш командою із назвою <gui>Вимовити елементи "
-"під вказівником миші</gui> на <link xref=\"preferences_key_bindings"
-"\">сторінці прив'язки клавіш</link> того самого вікна. Пов'язавши цю команду "
-"із комбінацією клавіш у спосіб, який описано у розділі <link xref="
-"\"howto_key_bindings\">Вступ щодо прив'язки клавіш</link>, ви зможете "
-"вмикати і вимикати режим озвучування елементів під вказівником миші тоді, "
-"коли цього захочете."
+"під вказівником миші</gui> на <link "
+"xref=\"preferences_key_bindings\">сторінці прив'язки клавіш</link> того "
+"самого вікна. Пов'язавши цю команду із комбінацією клавіш у спосіб, який "
+"описано у розділі <link xref=\"howto_key_bindings\">Вступ щодо прив'язки "
+"клавіш</link>, ви зможете вмикати і вимикати режим озвучування елементів під "
+"вказівником миші тоді, коли цього захочете."
 
 #. (itstool) path: note/title
 #: C/howto_mouse_review.page:40
@@ -3657,11 +3663,13 @@ msgstr "Натисніть Пробіл, щоб повторити читанн�
 #. (itstool) path: item/p
 #: C/howto_notifications.page:58
 msgid "Press one digit to read a specific message."
-msgstr "Натисніть клавішу із цифрою, щоб почути певне нумероване повідомлення."
+msgstr ""
+"Натисніть клавішу із цифрою, щоб почути певне нумероване повідомлення."
 
 #. (itstool) path: page/p
 #: C/howto_notifications.page:60
-msgid "Note that the most recently-received message is at the top of the list."
+msgid ""
+"Note that the most recently-received message is at the top of the list."
 msgstr ""
 "Зауважте, що більшість нещодавно отриманих повідомлень розташовуватиметься у "
 "верхній частині списку."
@@ -3671,8 +3679,8 @@ msgstr ""
 msgid ""
 "Each of <app>Orca</app>'s notification review commands is unbound by "
 "default. You can bind any or all of them to the shortcut or shortcuts you "
-"choose. How to do so is described in the <link xref=\"howto_key_bindings"
-"\">Introduction to Key Bindings</link>."
+"choose. How to do so is described in the <link "
+"xref=\"howto_key_bindings\">Introduction to Key Bindings</link>."
 msgstr ""
 "Усі команди озвучування сповіщень в <app>Orca</app> не пов'язано із "
 "комбінаціями клавіш. Ви можете пов'язати будь-яку з них або усі команди із "
@@ -3702,10 +3710,10 @@ msgid ""
 "Review</link>-based search designed to help you quickly locate objects that "
 "are visible on-screen within the current window."
 msgstr ""
-"Можливість пошуку в <app>Orca</app> є заснованим на <link xref="
-"\"howto_flat_review\">загальному перегляді</link> пошуком, розробленим, щоб "
-"допомогти вам швидко знаходити об'єкти, які є видимими на екрані у поточному "
-"вікні."
+"Можливість пошуку в <app>Orca</app> є заснованим на <link "
+"xref=\"howto_flat_review\">загальному перегляді</link> пошуком, розробленим, "
+"щоб допомогти вам швидко знаходити об'єкти, які є видимими на екрані у "
+"поточному вікні."
 
 #. (itstool) path: note/title
 #: C/howto_orca_find.page:23
@@ -3719,14 +3727,14 @@ msgid ""
 "your chosen <link xref=\"howto_keyboard_layout\">keyboard layout</link>:"
 msgstr ""
 "Щоб відкрити діалогове вікно <gui>Знайти</gui>, скористайтеся такою "
-"командою, яка залежить від вибраної <link xref=\"howto_keyboard_layout"
-"\">розкладки клавіатури</link>:"
+"командою, яка залежить від вибраної <link "
+"xref=\"howto_keyboard_layout\">розкладки клавіатури</link>:"
 
 #. (itstool) path: note/p
 #: C/howto_orca_find.page:38
 msgid ""
-"For a list of additional tasks you can perform, see the <link xref="
-"\"commands_find\">Orca Find commands</link>"
+"For a list of additional tasks you can perform, see the <link "
+"xref=\"commands_find\">Orca Find commands</link>"
 msgstr ""
 "Щоб ознайомитися зі списком додаткових завдань, які ви можете виконати, див. "
 "<link xref=\"commands_find\">команди пошуку Orca</link>"
@@ -3830,8 +3838,8 @@ msgid ""
 "when there is a match, Flat Review will automatically be activated and the "
 "matching item or text will become the current review item. Note that focus "
 "within the application will not be modified, nor will the caret be "
-"repositioned. If you need to accomplish either, please see <link xref="
-"\"commands_mouse\">Orca's Mouse/Pointer-Related Commands</link>."
+"repositioned. If you need to accomplish either, please see <link "
+"xref=\"commands_mouse\">Orca's Mouse/Pointer-Related Commands</link>."
 msgstr ""
 "Оскільки це можливість режиму <link xref=\"howto_flat_review\">загального "
 "перегляду</link>, при виявленні відповідника буде автоматично активовано "
@@ -4023,8 +4031,8 @@ msgstr "Налаштовування Orca"
 #. (itstool) path: page/p
 #: C/howto_setting_up_orca.page:21
 msgid ""
-"If you want to configure <app>Orca</app>, get into the <link xref="
-"\"preferences\">Preferences</link> dialog by pressing <keyseq><key>Orca "
+"If you want to configure <app>Orca</app>, get into the <link "
+"xref=\"preferences\">Preferences</link> dialog by pressing <keyseq><key>Orca "
 "Modifier</key><key>Space</key></keyseq> from within any accessible "
 "application. Alternatively, you can type <cmd>orca</cmd> followed by either "
 "<cmd>-s</cmd> or <cmd>--setup</cmd> in a terminal window or within the "
@@ -4099,8 +4107,8 @@ msgid ""
 "Commands</link>."
 msgstr ""
 "Повний список окремих елементів та пов'язаних із ними комбінацій клавіш "
-"можна знайти у розділі щодо <link xref=\"commands_structural_navigation"
-"\">команд навігації структурою</link>."
+"можна знайти у розділі щодо <link "
+"xref=\"commands_structural_navigation\">команд навігації структурою</link>."
 
 #. (itstool) path: section/title
 #: C/howto_structural_navigation.page:39
@@ -4309,15 +4317,15 @@ msgid ""
 "You can set each of <app>Orca</app>'s table reading preferences <app>Orca</"
 "app> wide as well as on an application-by-application basis. How to do each "
 "is described in the guide on <link xref=\"preferences\"><app>Orca</app>'s "
-"preferences dialogs</link>. The settings can be found on the <link xref="
-"\"preferences_speech\"> <gui>Speech</gui> page</link>."
+"preferences dialogs</link>. The settings can be found on the <link "
+"xref=\"preferences_speech\"> <gui>Speech</gui> page</link>."
 msgstr ""
 "Ви можете визначити кожен із параметрів читання таблиць в <app>Orca</app> "
 "для загального рівня <app>Orca</app> або для рівня окремої програми. "
-"Настанови щодо того, як це зробити, наведено у розділі щодо <link xref="
-"\"preferences\">діалогових вікон параметрів <app>Orca</app></link>. "
-"Відповідні пункти параметрів знаходяться на <link xref=\"preferences_speech"
-"\">сторінці <gui>Озвучення</gui></link>."
+"Настанови щодо того, як це зробити, наведено у розділі щодо <link "
+"xref=\"preferences\">діалогових вікон параметрів <app>Orca</app></link>. "
+"Відповідні пункти параметрів знаходяться на <link "
+"xref=\"preferences_speech\">сторінці <gui>Озвучення</gui></link>."
 
 #. (itstool) path: section/p
 #: C/howto_tables.page:50
@@ -4338,8 +4346,8 @@ msgid ""
 "locate tables, jump immediately to a table's first or last cell, and move to "
 "the next cell in any direction."
 msgstr ""
-"Передбачені в <app>Orca</app> <link xref="
-"\"commands_structural_navigation#tables\">команди структурної навігації "
+"Передбачені в <app>Orca</app> <link "
+"xref=\"commands_structural_navigation#tables\">команди структурної навігації "
 "таблицями</link> уможливлюють швидкий пошук таблиць, негайний перехід до "
 "першої або останньої комірки таблиці та перехід до наступної комірки у будь-"
 "якому напрямку."
@@ -4361,11 +4369,11 @@ msgstr ""
 #. (itstool) path: section/p
 #: C/howto_tables.page:71
 msgid ""
-"In addition, <app>Orca</app> provides configurable <link xref="
-"\"preferences_table_navigation\">presentation options</link> which work in "
-"conjunction with Structural Navigation and allow you to control whether or "
-"not cell coordinates are presented, multiple cell spans are indicated, and "
-"cell headers are announced."
+"In addition, <app>Orca</app> provides configurable <link "
+"xref=\"preferences_table_navigation\">presentation options</link> which work "
+"in conjunction with Structural Navigation and allow you to control whether "
+"or not cell coordinates are presented, multiple cell spans are indicated, "
+"and cell headers are announced."
 msgstr ""
 "Крім того, в <app>Orca</app> передбачено придатні до налаштовування <link "
 "xref=\"preferences_table_navigation\">параметри представлення даних</link>, "
@@ -4383,8 +4391,8 @@ msgid ""
 msgstr ""
 "Залежно від позиції на екрані, перш ніж користуватися можливостями "
 "структурної навігації, вам доведеться її увімкнути явним чином. Що дізнатися "
-"про це більше, ознайомтеся із відомостями щодо того, <link xref="
-"\"howto_structural_navigation#toggling_required\">коли слід вмикати "
+"про це більше, ознайомтеся із відомостями щодо того, <link "
+"xref=\"howto_structural_navigation#toggling_required\">коли слід вмикати "
 "структурну навігацію</link>."
 
 #. (itstool) path: section/title
@@ -4676,6 +4684,19 @@ msgid "Changing the Orca Modifier"
 msgstr "Зміна модифікатора Orca"
 
 #. (itstool) path: item/p
+#: C/howto_the_orca_modifier.page:53
+msgid ""
+"Get into the <link xref=\"preferences\">Orca Preferences</link> dialog by "
+"pressing <keyseq><key>Orca Modifier</key><key>Space</key></keyseq>. "
+"Alternatively, you can start Orca with the preferences dialog open from a "
+"terminal: type <cmd>orca -s</cmd> and press <key>Return</key>."
+msgstr ""
+"Відкрийте вікно <link xref=\"preferences\">Параметри Orca</link> натисканням "
+"комбінації клавіш <keyseq><key>Модифікатор Orca</key><key>Пробіл</key></"
+"keyseq>. Крім того, ви можете відкрити вікно налаштувань Orca з термінала: "
+"наберіть <cmd>orca -s</cmd> і натисніть клавішу <key>Enter</key>."
+
+#. (itstool) path: item/p
 #: C/howto_the_orca_modifier.page:62
 msgid "Move to the <gui>Screen Reader Modifier Key(s)</gui> combobox."
 msgstr ""
@@ -4921,37 +4942,47 @@ msgid ""
 msgstr ""
 "Якщо у віджеті увімкнено перевірку правопису програми, для якої в <app>Orca</"
 "app> передбачено розширену підтримку, базова команда «Де я» повторить "
-"повідомлення про помилку, відповідно до <link xref=\"preferences_spellcheck"
-"\">параметрів перевірки правопису</link>. Використання докладної команди «Де "
-"я» змусить <app>Orca</app> повідомити також повні дані щодо помилки."
+"повідомлення про помилку, відповідно до <link "
+"xref=\"preferences_spellcheck\">параметрів перевірки правопису</link>. "
+"Використання докладної команди «Де я» змусить <app>Orca</app> повідомити "
+"також повні дані щодо помилки."
 
 #. (itstool) path: page/p
 #: C/howto_whereami.page:104
 msgid ""
 "And so on. Again, the goal of <app>Orca</app>'s Where Am I is to provide you "
 "with the details you are most likely interested in knowing about the object "
-"you are currently in. To give Where Am I a try, see the list of <link xref="
-"\"commands_where_am_i\">Where Am I commands</link>."
+"you are currently in. To give Where Am I a try, see the list of <link "
+"xref=\"commands_where_am_i\">Where Am I commands</link>."
 msgstr ""
 "Тощо. Знову ж таки, метою команд «Де я» <app>Orca</app> є надання тих "
 "подробиць щодо об'єкта у якому ви перебуваєте, які є найцікавішими. Щоб "
-"спробувати команди «Де я», скористайтеся списком <link xref="
-"\"commands_where_am_i\">команд «Де я»</link>."
+"спробувати команди «Де я», скористайтеся списком <link "
+"xref=\"commands_where_am_i\">команд «Де я»</link>."
 
 #. (itstool) path: info/title
 #: C/index.page:6
+#| msgid "<_:media-1/> <app>Orca</app> Screen Reader"
 msgctxt "text"
-msgid "Orca Screen Reader"
-msgstr "Інструмент читання з екрана «Orca»"
+msgid "<app>Orca</app> Screen Reader"
+msgstr "Інструмент читання з екрана <app>Orca</app>"
 
 #. (itstool) path: info/title
 #: C/index.page:7
+#| msgid "<_:media-1/> <app>Orca</app> Screen Reader"
+msgctxt "link:trail"
+msgid "<app>Orca</app> Screen Reader"
+msgstr "Інструмент читання з екрана <app>Orca</app>"
+
+#. (itstool) path: info/title
+#: C/index.page:8
+#| msgid "<_:media-1/> <app>Orca</app> Screen Reader"
 msgctxt "link"
-msgid "Introduction to the <app>Orca</app> Screen Reader"
-msgstr "Вступ до інструмента читання з екрана <app>Orca</app>"
+msgid "<app>Orca</app> Screen Reader"
+msgstr "Інструмент читання з екрана <app>Orca</app>"
 
 #. (itstool) path: info/desc
-#: C/index.page:16
+#: C/index.page:17
 msgid ""
 "Orca is a free, open source, flexible, and extensible screen reader that "
 "provides access to the graphical desktop via speech and refreshable braille."
@@ -4961,23 +4992,18 @@ msgstr ""
 "графічної стільниці за допомогою технологій озвучування тексту та дисплея "
 "брайля."
 
-#. (itstool) path: media/span
-#: C/index.page:23
-msgid "<app>Orca</app>'s logo"
-msgstr "Логотип <app>Orca</app>"
-
 #. (itstool) path: page/title
-#: C/index.page:21
+#: C/index.page:22
 msgid "<_:media-1/> <app>Orca</app> Screen Reader"
 msgstr "<_:media-1/> Інструмент читання з екрана <app>Orca</app>"
 
 #. (itstool) path: note/title
-#: C/index.page:28
+#: C/index.page:27
 msgid "Before You Begin"
 msgstr "Передмова"
 
 #. (itstool) path: note/p
-#: C/index.page:29
+#: C/index.page:28
 msgid ""
 "If you are not yet familiar with the navigation commands provided by your "
 "desktop environment, you are encouraged to read that documentation first."
@@ -4986,12 +5012,12 @@ msgstr ""
 "стільничному середовищі, вам варто спочатку прочитати цю документацію."
 
 #. (itstool) path: section/title
-#: C/index.page:39
+#: C/index.page:38
 msgid "Reading Documents and Web Pages"
 msgstr "Читання документів та вебсторінок"
 
 #. (itstool) path: section/title
-#: C/index.page:45
+#: C/index.page:44
 msgid "Quick Reference"
 msgstr "Короткий довідник"
 
@@ -5108,7 +5134,8 @@ msgstr ""
 #. (itstool) path: item/p
 #: C/introduction.page:73
 msgid "<cmd>-s</cmd>, <cmd>--setup</cmd>: Set up user preferences"
-msgstr "<cmd>-s</cmd>, <cmd>--setup</cmd>: встановити налаштування користувача"
+msgstr ""
+"<cmd>-s</cmd>, <cmd>--setup</cmd>: встановити налаштування користувача"
 
 #. (itstool) path: item/p
 #: C/introduction.page:78
@@ -5403,9 +5430,9 @@ msgid ""
 msgstr ""
 "Крім того, ви, якщо хочете, можете наказати програмі показувати атрибути "
 "тексту на дисплеї Брайля. Вмикання цієї можливості і вибір цікавих для вас "
-"атрибутів можна виконати на <link xref=\"preferences_text_attributes"
-"\">сторінці <gui>Атрибути тексту</gui></link> діалогового вікна параметрів "
-"програми."
+"атрибутів можна виконати на <link "
+"xref=\"preferences_text_attributes\">сторінці <gui>Атрибути тексту</gui></"
+"link> діалогового вікна параметрів програми."
 
 #. (itstool) path: section/title
 #: C/preferences_braille.page:126
@@ -5775,10 +5802,10 @@ msgstr "Увімкнути структурну навігацію"
 #. (itstool) path: section/p
 #: C/preferences_web.page:72
 msgid ""
-"This checkbox toggles <app>Orca</app>'s <link xref="
-"\"howto_structural_navigation\">Structural Navigation</link> on and off. "
-"Structural Navigation allows you to navigate by elements such as headings, "
-"links, and form fields."
+"This checkbox toggles <app>Orca</app>'s <link "
+"xref=\"howto_structural_navigation\">Structural Navigation</link> on and "
+"off. Structural Navigation allows you to navigate by elements such as "
+"headings, links, and form fields."
 msgstr ""
 "За допомогою цього пункту можна вмикати і вимикати у <app>Orca</app> <link "
 "xref=\"howto_structural_navigation\">навігацію структурою</link>. За "
@@ -5916,8 +5943,8 @@ msgid ""
 "Preferences</link>."
 msgstr ""
 "Щоб дізнатися більше про можливості <app>Orca</app> при пересуванні "
-"таблицями, будь ласка, ознайомтеся із розділом щодо <link xref="
-"\"preferences_table_navigation\">параметрів навігації таблицями</link>."
+"таблицями, будь ласка, ознайомтеся із розділом щодо <link "
+"xref=\"preferences_table_navigation\">параметрів навігації таблицями</link>."
 
 #. (itstool) path: section/title
 #: C/preferences_web.page:181
@@ -6100,8 +6127,9 @@ msgid ""
 msgstr ""
 "Якщо позначено, <app>Orca</app> озвучуватиме відомості щодо об'єкта, який "
 "перебуває під вказівником миші, коли ви пересуватиметеся екраном з "
-"використанням вбудованої можливості <app>Orca</app> <link xref="
-"\"howto_mouse_review\">Озвучування елементів під вказівником миші</link>."
+"використанням вбудованої можливості <app>Orca</app> <link "
+"xref=\"howto_mouse_review\">Озвучування елементів під вказівником миші</"
+"link>."
 
 #. (itstool) path: info/desc
 #: C/preferences_general.page:76
@@ -6248,13 +6276,13 @@ msgstr "Оголосити таблиці у Вимовляти все"
 msgid ""
 "Whether or not <app>Orca</app> makes these announcements during navigation "
 "is also configurable. You will find similar checkboxes on the <gui>Speech</"
-"gui> page. For more information, see <link xref="
-"\"preferences_speech#spoken_context\">Spoken Context</link>."
+"gui> page. For more information, see <link "
+"xref=\"preferences_speech#spoken_context\">Spoken Context</link>."
 msgstr ""
 "Також можна налаштувати, чи буде <app>Orca</app> виголошувати ці дані у "
 "режимі навігації. Подібні ж пункти є на сторінці <gui>Озвучення</gui>. Щоб "
-"дізнатися про це більше, ознайомтеся із вмістом розділу <link xref="
-"\"preferences_speech#spoken_context\">Дані для озвучення</link>."
+"дізнатися про це більше, ознайомтеся із вмістом розділу <link "
+"xref=\"preferences_speech#spoken_context\">Дані для озвучення</link>."
 
 #. (itstool) path: info/desc
 #: C/preferences_general.page:154
@@ -6274,8 +6302,8 @@ msgstr "Вимовляти все по"
 #: C/preferences_general.page:160
 msgid ""
 "The <gui>Say All By</gui> combo box allows you to specify whether <app>Orca</"
-"app> speaks a sentence at a time or a line at a time when doing a \"Say All"
-"\" of a document."
+"app> speaks a sentence at a time or a line at a time when doing a \"Say "
+"All\" of a document."
 msgstr ""
 "За допомогою спадного списку <gui>Вимовляти все по</gui> ви можете "
 "визначити, чи буде <app>Orca</app> вимовляти по одному реченню чи по одному "
@@ -7445,16 +7473,17 @@ msgid ""
 "If <gui>Announce blockquotes during navigation</gui> is checked, <app>Orca</"
 "app> will tell you when you navigate into or out of a blockquote. Note that "
 "this setting is independent of whether or not this announcement is made "
-"during Say All. See <link xref=\"preferences_general#say_all_announce_context"
-"\">Announce Contextual Information in Say All</link> for more information."
+"during Say All. See <link "
+"xref=\"preferences_general#say_all_announce_context\">Announce Contextual "
+"Information in Say All</link> for more information."
 msgstr ""
 "Якщо позначено пункт <gui>Оголошувати блоки цитат під час навігації</gui>, "
 "<app>Orca</app> повідомлятиме вам про вхід і вихід із блоку цитування. "
 "Зауважте, що цей параметр роботи є незалежним від того, чи виконано це "
 "оголошення у режимі «Вимовляти все». Щоб дізнатися про це більше, "
-"ознайомтеся із розділом <link xref="
-"\"preferences_general#say_all_announce_context\">Озвучування контекстних "
-"даних у режимі «Вимовляти все»</link>."
+"ознайомтеся із розділом <link "
+"xref=\"preferences_general#say_all_announce_context\">Озвучування "
+"контекстних даних у режимі «Вимовляти все»</link>."
 
 #. (itstool) path: section/title
 #: C/preferences_speech.page:239
@@ -7494,8 +7523,9 @@ msgid ""
 "If <gui>Announce landmarks during navigation</gui> is checked, <app>Orca</"
 "app> will tell you when you navigate into or out of an ARIA landmark. Note "
 "that this setting is independent of whether or not this announcement is made "
-"during Say All. See <link xref=\"preferences_general#say_all_announce_context"
-"\">Announce Contextual Information in Say All</link> for more information."
+"during Say All. See <link "
+"xref=\"preferences_general#say_all_announce_context\">Announce Contextual "
+"Information in Say All</link> for more information."
 msgstr ""
 "Якщо позначено пункт <gui>Оголошувати орієнтири під час навігації</gui>, "
 "<app>Orca</app> повідомлятиме вам про вхід і вихід із орієнтира ARIA. "
@@ -7515,8 +7545,9 @@ msgid ""
 "If <gui>Announce lists during navigation</gui> is checked, <app>Orca</app> "
 "will tell you when you navigate into or out of a list. Note that this "
 "setting is independent of whether or not this announcement is made during "
-"Say All. See <link xref=\"preferences_general#say_all_announce_context"
-"\">Announce Contextual Information in Say All</link> for more information."
+"Say All. See <link "
+"xref=\"preferences_general#say_all_announce_context\">Announce Contextual "
+"Information in Say All</link> for more information."
 msgstr ""
 "Якщо позначено пункт <gui>Оголошувати списки під час навігації</gui>, "
 "<app>Orca</app> повідомлятиме вам про вхід і вихід зі списків. Зауважте, що "
@@ -7536,8 +7567,9 @@ msgid ""
 "If <gui>Announce panels during navigation</gui> is checked, <app>Orca</app> "
 "will tell you when you navigate into or out of a panel. Note that this "
 "setting is independent of whether or not this announcement is made during "
-"Say All. See <link xref=\"preferences_general#say_all_announce_context"
-"\">Announce Contextual Information in Say All</link> for more information."
+"Say All. See <link "
+"xref=\"preferences_general#say_all_announce_context\">Announce Contextual "
+"Information in Say All</link> for more information."
 msgstr ""
 "Якщо позначено пункт <gui>Оголошувати панелі під час навігації</gui>, "
 "<app>Orca</app> повідомлятиме вам про вхід і вихід із панелей. Зауважте, що "
@@ -7557,8 +7589,9 @@ msgid ""
 "If <gui>Announce tables during navigation</gui> is checked, <app>Orca</app> "
 "will tell you when you navigate into or out of a table. Note that this "
 "setting is independent of whether or not this announcement is made during "
-"Say All. See <link xref=\"preferences_general#say_all_announce_context"
-"\">Announce Contextual Information in Say All</link> for more information."
+"Say All. See <link "
+"xref=\"preferences_general#say_all_announce_context\">Announce Contextual "
+"Information in Say All</link> for more information."
 msgstr ""
 "Якщо позначено пункт <gui>Оголошувати таблиці під час навігації</gui>, "
 "<app>Orca</app> повідомлятиме вам про вхід і вихід із таблиць. Зауважте, що "
@@ -7747,8 +7780,9 @@ msgstr "Параметри навігації таблицями"
 #: C/preferences_table_navigation.page:22
 msgid ""
 "The following options allow you to customize how <app>Orca</app> behaves "
-"when navigating within a table in <link xref=\"howto_structural_navigation"
-"\">Structural-Navigation</link>-enabled applications."
+"when navigating within a table in <link "
+"xref=\"howto_structural_navigation\">Structural-Navigation</link>-enabled "
+"applications."
 msgstr ""
 "Описані нижче пункти надають вам змогу налаштувати спосіб, у який <app>Orca</"
 "app> поводитиметься при навігації у таблицях у програмах із можливостями "
@@ -8248,8 +8282,8 @@ msgid ""
 "\"MultiCaseString.\" Speech synthesizers do not always pronounce such "
 "multicase strings correctly. Checking the <gui>Speak multicase strings as "
 "words</gui> checkbox will cause <app>Orca</app> to break a word like "
-"\"MultiCaseString\" into separate words (\"Multi,\" \"Case,\" and \"String"
-"\") prior to passing it along to the speech synthesizer."
+"\"MultiCaseString\" into separate words (\"Multi,\" \"Case,\" and "
+"\"String\") prior to passing it along to the speech synthesizer."
 msgstr ""
 "У деяких текстах, особливо якщо ви працюєте з програмним кодом, часто "
 "трапляються «слова», які насправді є комбінацією декількох слів, які "
@@ -8275,6 +8309,26 @@ msgstr ""
 "Якщо буде позначено пункт <gui>Вимовляти числа як цифри</gui>, <app>Orca</"
 "app> розбиватиме числа, наприклад «123», на окремі цифри («1», «2» і «3»), "
 "перш ніж передавати їх синтезатору мовлення."
+
+#~ msgctxt "text"
+#~ msgid "Orca Screen Reader"
+#~ msgstr "Інструмент читання з екрана «Orca»"
+
+#~ msgctxt "link"
+#~ msgid "Introduction to the <app>Orca</app> Screen Reader"
+#~ msgstr "Вступ до інструмента читання з екрана <app>Orca</app>"
+
+#~ msgid "<app>Orca</app>'s logo"
+#~ msgstr "Логотип <app>Orca</app>"
+
+#~ msgid ""
+#~ "Next and previous form field: <keyseq><key>Orca Modifier</key><key>Tab</"
+#~ "key></keyseq> and <keyseq><key>Orca Modifier</key><key>Shift</"
+#~ "key><key>Tab</key></keyseq>"
+#~ msgstr ""
+#~ "Наступне і попереднє поле форми: <keyseq><key>Модифікатор Orca</"
+#~ "key><key>Tab</key></keyseq> і <keyseq><key>Модифікатор Orca</"
+#~ "key><key>Shift</key><key>Tab</key></keyseq>"
 
 #~ msgctxt "link"
 #~ msgid "Gecko Navigation"
