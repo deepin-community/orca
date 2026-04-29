@@ -17,10 +17,9 @@
 # Free Software Foundation, Inc., Franklin Street, Fifth Floor,
 # Boston MA  02110-1301 USA.
 
-"""Commonly-required utility methods needed by -- and potentially
-   customized by -- application and toolkit scripts. They have
-   been pulled out from the scripts because certain scripts had
-   gotten way too large as a result of including these methods."""
+# pylint: disable=duplicate-code
+
+"""Custom script utilities for pidgin."""
 
 __id__ = "$Id$"
 __version__   = "$Revision$"
@@ -28,39 +27,41 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2010 Joanmarie Diggs."
 __license__   = "LGPL"
 
-import pyatspi
+from orca.scripts.toolkits import gtk
+from orca.ax_object import AXObject
+from orca.ax_table import AXTable
+from orca.ax_utilities import AXUtilities
 
-import orca.debug as debug
-import orca.script_utilities as script_utilities
+class Utilities(gtk.Utilities):
+    """Custom script utilities for pidgin."""
 
-#############################################################################
-#                                                                           #
-# Utilities                                                                 #
-#                                                                           #
-#############################################################################
+    def get_expander_cell_for(self, obj):
+        """Returns the cell that is expandable in the row with obj."""
 
-class Utilities(script_utilities.Utilities):
+        if not self._script.chat.isInBuddyList(obj):
+            return None
 
-    def __init__(self, script):
-        """Creates an instance of the Utilities class.
+        if AXUtilities.is_expandable(obj):
+            return obj
 
-        Arguments:
-        - script: the script with which this instance is associated.
-        """
+        if not AXUtilities.is_table_cell(obj):
+            return None
 
-        script_utilities.Utilities.__init__(self, script)
+        parent = AXObject.get_parent(obj)
+        if AXUtilities.is_table_cell(parent):
+            obj = parent
 
-    #########################################################################
-    #                                                                       #
-    # Utilities for finding, identifying, and comparing accessibles         #
-    #                                                                       #
-    #########################################################################
+        candidate = AXObject.get_previous_sibling(obj)
+        if AXUtilities.is_expandable(candidate):
+            return candidate
+
+        return None
 
     def childNodes(self, obj):
         """Gets all of the children that have RELATION_NODE_CHILD_OF pointing
         to this expanded table cell. Overridden here because the object
         which contains the relation is in a hidden column and thus doesn't
-        have a column number (necessary for using getAccessibleAt()).
+        have a column number.
 
         Arguments:
         -obj: the Accessible Object
@@ -69,124 +70,44 @@ class Utilities(script_utilities.Utilities):
         """
 
         if not self._script.chat.isInBuddyList(obj):
-            return script_utilities.Utilities.childNodes(self, obj)
+            return super().childNodes(obj)
 
-        try:
-            table = obj.parent.queryTable()
-        except:
+        if not AXUtilities.is_expanded(obj):
             return []
-        else:
-            if not obj.getState().contains(pyatspi.STATE_EXPANDED):
-                return []
 
-        nodes = []        
-        index = self.cellIndex(obj)
-        row = table.getRowAtIndex(index)
-        col = table.getColumnAtIndex(index + 1)
-        nodeLevel = self.nodeLevel(obj)
-        done = False
+        parent = AXTable.get_table(obj)
+        if parent is None:
+            return []
+
+        nodes = []
+        row, col = AXTable.get_cell_coordinates(obj)
+
+        # increment the column because the expander cell is hidden.
+        col += 1
+        node_level = self.nodeLevel(obj)
 
         # Candidates will be in the rows beneath the current row.
         # Only check in the current column and stop checking as
         # soon as the node level of a candidate is equal or less
         # than our current level.
         #
-        for i in range(row+1, table.nRows):
-            cell = table.getAccessibleAt(i, col)
-            nodeCell = cell.parent[cell.getIndexInParent() - 1]
-            relations = nodeCell.getRelationSet()
-            for relation in relations:
-                if relation.getRelationType() \
-                       == pyatspi.RELATION_NODE_CHILD_OF:
-                    nodeOf = relation.getTarget(0)
-                    if self.isSameObject(obj, nodeOf):
-                        nodes.append(cell)
-                    else:
-                        currentLevel = self.nodeLevel(nodeOf)
-                        if currentLevel <= nodeLevel:
-                            done = True
-                    break
-            if done:
+        for i in range(row + 1, AXTable.get_row_count(parent, prefer_attribute=False)):
+            cell = AXTable.get_cell_at(parent, i, col)
+            node_cell = AXObject.get_previous_sibling(cell)
+            targets = AXUtilities.get_is_node_child_of(node_cell)
+            if not targets:
+                continue
+
+            node_of = targets[0]
+            if obj == node_of:
+                nodes.append(cell)
+            elif self.nodeLevel(node_of) <= node_level:
                 break
 
         return nodes
 
     def nodeLevel(self, obj):
-        """Determines the node level of this object if it is in a tree
-        relation, with 0 being the top level node.  If this object is
-        not in a tree relation, then -1 will be returned. Overridden
-        here because the accessible we need is in a hidden column.
-
-        Arguments:
-        -obj: the Accessible object
-        """
-
-        if not obj:
-            return -1
-
         if not self._script.chat.isInBuddyList(obj):
-            return script_utilities.Utilities.nodeLevel(self, obj)
+            return super().nodeLevel(obj)
 
-        try:
-            obj = obj.parent[obj.getIndexInParent() - 1]
-        except:
-            return -1
-
-        try:
-            table = obj.parent.queryTable()
-        except:
-            return -1
-
-        nodes = []
-        node = obj
-        done = False
-        while not done:
-            relations = node.getRelationSet()
-            node = None
-            for relation in relations:
-                if relation.getRelationType() \
-                       == pyatspi.RELATION_NODE_CHILD_OF:
-                    node = relation.getTarget(0)
-                    break
-
-            # We want to avoid situations where something gives us an
-            # infinite cycle of nodes.  Bon Echo has been seen to do
-            # this (see bug 351847).
-            #
-            if (len(nodes) > 100) or nodes.count(node):
-                debug.println(debug.LEVEL_WARNING,
-                              "pidgin.nodeLevel detected a cycle!!!")
-                done = True
-            elif node:
-                nodes.append(node)
-                debug.println(debug.LEVEL_FINEST,
-                              "pidgin.nodeLevel %d" % len(nodes))
-            else:
-                done = True
-
-        return len(nodes) - 1
-
-    #########################################################################
-    #                                                                       #
-    # Utilities for working with the accessible text interface              #
-    #                                                                       #
-    #########################################################################
-
-
-
-    #########################################################################
-    #                                                                       #
-    # Miscellaneous Utilities                                               #
-    #                                                                       #
-    #########################################################################
-
-    def isZombie(self, obj):
-        if not super().isZombie(obj):
-            return False
-
-        if obj.getRole() != pyatspi.ROLE_TOGGLE_BUTTON:
-            return True
-
-        msg = 'INFO: Hacking around broken index in parent for %s' % obj
-        debug.println(debug.LEVEL_INFO, msg, True)
-        return obj.getIndexInParent() != -1
+        return super().nodeLevel(AXObject.get_previous_sibling(obj))

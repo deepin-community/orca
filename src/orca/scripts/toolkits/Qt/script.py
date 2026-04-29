@@ -25,43 +25,61 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2013-2019 Igalia, S.L."
 __license__   = "LGPL"
 
-import pyatspi
+from orca import debug
+from orca import focus_manager
+from orca.scripts import default
+from orca.ax_object import AXObject
+from orca.ax_utilities import AXUtilities
 
-import orca.debug as debug
-import orca.orca as orca
-import orca.scripts.default as default
+from .script_utilities import Utilities
+
 
 class Script(default.Script):
 
-    def __init__(self, app):
-        super().__init__(app)
+    def get_utilities(self):
+        return Utilities(self)
 
-    def onCaretMoved(self, event):
+    def on_caret_moved(self, event):
         """Callback for object:text-caret-moved accessibility events."""
 
-        if event.source.getRole() == pyatspi.ROLE_ACCELERATOR_LABEL:
+        if AXUtilities.is_accelerator_label(event.source):
             msg = "QT: Ignoring event due to role."
-            debug.println(debug.LEVEL_INFO, msg, True)
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return
 
-        super().onCaretMoved(event)
+        super().on_caret_moved(event)
 
-    def onFocusedChanged(self, event):
+    def on_focused_changed(self, event):
         """Callback for object:state-changed:focused accessibility events."""
 
         if not event.detail1:
             return
 
-        if event.source.getRole() == pyatspi.ROLE_ACCELERATOR_LABEL:
+        if AXUtilities.is_accelerator_label(event.source):
             msg = "QT: Ignoring event due to role."
-            debug.println(debug.LEVEL_INFO, msg, True)
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return
 
-        state = event.source.getState()
-        if state.contains(pyatspi.STATE_FOCUSED) and state.contains(pyatspi.STATE_FOCUSABLE):
-            super().onFocusedChanged(event)
+        frame = self.utilities.topLevelObject(event.source)
+        if not frame:
+            msg = "QT: Ignoring event because we couldn't find an ancestor window."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return
 
-        msg = "QT: WARNING - source states lack focused and/or focusable"
-        debug.println(debug.LEVEL_INFO, msg, True)
-        orca.setLocusOfFocus(event, event.source)
+        isActive = AXUtilities.is_active(frame)
+        if not isActive:
+            tokens = ["QT: Event came from inactive top-level object", frame]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+
+            AXObject.clear_cache(frame, False, "Ensuring we have correct active state.")
+            isActive = AXUtilities.is_active(frame)
+            tokens = ["QT: Cleared cache of", frame, ". Frame is now active:", isActive]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+
+        if AXUtilities.is_focused(event.source):
+            super().on_focused_changed(event)
+            return
+
+        msg = "QT: WARNING - source lacks focused state. Setting focus anyway."
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+        focus_manager.get_manager().set_locus_of_focus(event, event.source)

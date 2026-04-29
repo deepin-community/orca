@@ -90,6 +90,19 @@ class SayAllContext:
         return "SAY ALL: %s '%s' (%i-%i, current: %i)" % \
             (self.obj, self.utterance, self.startOffset, self.endOffset, self.currentOffset)
 
+    def copy(self):
+        new = SayAllContext(self.obj, self.utterance,
+                            self.startOffset, self.endOffset)
+        new.currentOffset = self.currentOffset
+        new.currentEndOffset = self.currentEndOffset
+        return new
+
+    def __eq__(self, other):
+        return (self.startOffset == other.startOffset and
+                self.endOffset == other.endOffset and
+                self.obj == other.obj and
+                self.utterance == other.utterance)
+
 
 class SpeechServer(object):
     """Provides speech server abstraction."""
@@ -108,9 +121,9 @@ class SpeechServer(object):
         pass
 
     @staticmethod
-    def getSpeechServer(info):
+    def get_speech_server(info):
         """Gets a given SpeechServer based upon the info.
-        See SpeechServer.getInfo() for more info.
+        See SpeechServer.get_info() for more info.
         """
         pass
 
@@ -123,7 +136,7 @@ class SpeechServer(object):
     def __init__(self):
         pass
 
-    def getInfo(self):
+    def get_info(self):
         """Returns [name, id]
         """
         pass
@@ -133,7 +146,7 @@ class SpeechServer(object):
         voice families known by the speech server."""
         pass
 
-    def speakCharacter(self, character, acss=None):
+    def speak_character(self, character, acss=None):
         """Speaks a single character immediately.
 
         Arguments:
@@ -146,25 +159,11 @@ class SpeechServer(object):
         """
         pass
 
-    def speakKeyEvent(self, event, acss=None):
+    def speak_key_event(self, event, acss=None):
         """Speaks a key event immediately.
 
         Arguments:
         - event: the input_event.KeyboardEvent.
-        """
-        pass
-
-    def speakUtterances(self, utteranceList, acss=None, interrupt=True):
-        """Speaks the given list of utterances immediately.
-
-        Arguments:
-        - utteranceList: list of strings to be spoken
-        - acss:      acss.ACSS instance; if None,
-                     the default voice settings will be used.
-                     Otherwise, the acss settings will be
-                     used to augment/override the default
-                     voice settings.
-        - interrupt: if True, stop any speech currently in progress.
         """
         pass
 
@@ -184,20 +183,16 @@ class SpeechServer(object):
         """
         pass
 
-    def isSpeaking(self):
-        """"Returns True if the system is currently speaking."""
-        return False
-
-    def sayAll(self, utteranceIterator, progressCallback):
-        """Iterates through the given utteranceIterator, speaking
+    def say_all(self, utterance_iterator, progress_callback):
+        """Iterates through the given utterance_iterator, speaking
         each utterance one at a time.  Subclasses may postpone
         getting a new element until the current element has been
         spoken.
 
         Arguments:
-        - utteranceIterator: iterator/generator whose next() function
+        - utterance_iterator: iterator/generator whose next() function
                              returns a [SayAllContext, acss] tuple
-        - progressCallback:  called as speech progress is made - has a
+        - progress_callback:  called as speech progress is made - has a
                              signature of (SayAllContext, type), where
                              type is one of PROGRESS, INTERRUPTED, or
                              COMPLETED.
@@ -224,6 +219,16 @@ class SpeechServer(object):
         """
         pass
 
+    def increaseSpeechVolume(self, step=0.5):
+        """Increases the speech volume.
+        """
+        pass
+
+    def decreaseSpeechVolume(self, step=0.5):
+        """Decreases the speech volume.
+        """
+        pass
+
     def updateCapitalizationStyle(self):
         """Updates the capitalization style used by the speech server."""
         pass
@@ -243,3 +248,15 @@ class SpeechServer(object):
     def reset(self, text=None, acss=None):
         """Resets the speech engine."""
         pass
+
+    def getOutputModule(self):
+        """Returns the output module associated with this speech server."""
+        return None
+
+    def setOutputModule(self, module):
+        """Sets the output module associated with this speech server."""
+        pass
+
+    def list_output_modules(self):
+        """Return names of available output modules as a tuple of strings."""
+        return ()

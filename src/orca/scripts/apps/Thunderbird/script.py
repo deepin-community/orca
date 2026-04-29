@@ -17,6 +17,9 @@
 # Free Software Foundation, Inc., Franklin Street, Fifth Floor,
 # Boston MA  02110-1301 USA.
 
+# pylint: disable=duplicate-code
+# pylint: disable=too-many-public-methods
+
 """Custom script for Thunderbird."""
 
 __id__        = "$Id$"
@@ -25,391 +28,233 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2004-2008 Sun Microsystems Inc."
 __license__   = "LGPL"
 
-import pyatspi
-
-import orca.orca as orca
-import orca.cmdnames as cmdnames
-import orca.debug as debug
-import orca.input_event as input_event
-import orca.scripts.default as default
-import orca.settings_manager as settings_manager
-import orca.orca_state as orca_state
-import orca.speech as speech
-import orca.scripts.toolkits.Gecko as Gecko
+from orca import cmdnames
+from orca import debug
+from orca import focus_manager
+from orca import input_event
+from orca import settings_manager
+from orca.scripts.toolkits import Gecko
+from orca.ax_object import AXObject
+from orca.ax_text import AXText
+from orca.ax_utilities import AXUtilities
 
 from .spellcheck import SpellCheck
-
-_settingsManager = settings_manager.getManager()
-
-########################################################################
-#                                                                      #
-# The Thunderbird script class.                                        #
-#                                                                      #
-########################################################################
 
 class Script(Gecko.Script):
     """The script for Thunderbird."""
 
     def __init__(self, app):
-        """ Creates a new script for the given application.
-
-        Arguments:
-        - app: the application to create a script for.
-        """
-
-        # Store the last autocompleted string for the address fields
-        # so that we're not too 'chatty'.  See bug #533042.
-        #
-        self._lastAutoComplete = ""
-
-        if _settingsManager.getSetting('sayAllOnLoad') is None:
-            _settingsManager.setSetting('sayAllOnLoad', False)
-        if _settingsManager.getSetting('pageSummaryOnLoad') is None:
-            _settingsManager.setSetting('pageSummaryOnLoad', False)
+        if settings_manager.get_manager().get_setting('sayAllOnLoad') is None:
+            settings_manager.get_manager().set_setting('sayAllOnLoad', False)
+        if settings_manager.get_manager().get_setting('pageSummaryOnLoad') is None:
+            settings_manager.get_manager().set_setting('pageSummaryOnLoad', False)
 
         super().__init__(app)
 
-    def setupInputEventHandlers(self):
-        super().setupInputEventHandlers()
+    def setup_input_event_handlers(self):
+        """Defines the input event handlers for this script."""
 
-        self.inputEventHandlers["togglePresentationModeHandler"] = \
+        super().setup_input_event_handlers()
+
+        self.input_event_handlers["togglePresentationModeHandler"] = \
             input_event.InputEventHandler(
                 Script.togglePresentationMode,
                 cmdnames.TOGGLE_PRESENTATION_MODE)
 
-        self.inputEventHandlers["enableStickyFocusModeHandler"] = \
+        self.input_event_handlers["enableStickyFocusModeHandler"] = \
             input_event.InputEventHandler(
                 Script.enableStickyFocusMode,
                 cmdnames.SET_FOCUS_MODE_STICKY)
 
-        self.inputEventHandlers["enableStickyBrowseModeHandler"] = \
+        self.input_event_handlers["enableStickyBrowseModeHandler"] = \
             input_event.InputEventHandler(
                 Script.enableStickyBrowseMode,
                 cmdnames.SET_BROWSE_MODE_STICKY)
 
-    def getSpellCheck(self):
+    def get_spellcheck(self):
         """Returns the spellcheck support for this script."""
 
         return SpellCheck(self)
 
-    def getAppPreferencesGUI(self):
+    def get_app_preferences_gui(self):
         """Return a GtkGrid containing the application unique configuration
         GUI items for the current application."""
 
-        grid = super().getAppPreferencesGUI()
+        grid = super().get_app_preferences_gui()
 
         self._sayAllOnLoadCheckButton.set_active(
-            _settingsManager.getSetting('sayAllOnLoad'))
+            settings_manager.get_manager().get_setting('sayAllOnLoad'))
         self._pageSummaryOnLoadCheckButton.set_active(
-            _settingsManager.getSetting('pageSummaryOnLoad'))
+            settings_manager.get_manager().get_setting('pageSummaryOnLoad'))
 
-        spellcheck = self.spellcheck.getAppPreferencesGUI()
+        spellcheck = self.spellcheck.get_app_preferences_gui()
         grid.attach(spellcheck, 0, len(grid.get_children()), 1, 1)
         grid.show_all()
 
         return grid
 
-    def getPreferencesFromGUI(self):
+    def get_preferences_from_gui(self):
         """Returns a dictionary with the app-specific preferences."""
 
-        prefs = super().getPreferencesFromGUI()
+        prefs = super().get_preferences_from_gui()
         prefs['sayAllOnLoad'] = self._sayAllOnLoadCheckButton.get_active()
         prefs['pageSummaryOnLoad'] = self._pageSummaryOnLoadCheckButton.get_active()
-        prefs.update(self.spellcheck.getPreferencesFromGUI())
+        prefs.update(self.spellcheck.get_preferences_from_gui())
 
         return prefs
 
-    def locusOfFocusChanged(self, event, oldFocus, newFocus):
+    def locus_of_focus_changed(self, event, old_focus, new_focus):
         """Handles changes of focus of interest to the script."""
 
-        if self.spellcheck.isSuggestionsItem(newFocus):
-            includeLabel = not self.spellcheck.isSuggestionsItem(oldFocus)
-            orca.emitRegionChanged(newFocus)
-            self.updateBraille(newFocus)
-            self.spellcheck.presentSuggestionListItem(includeLabel=includeLabel)
+        if self.spellcheck.is_suggestions_item(new_focus):
+            include_label = not self.spellcheck.is_suggestions_item(old_focus)
+            self.update_braille(new_focus)
+            self.spellcheck.present_suggestion_list_item(include_label=include_label)
             return
 
-        super().locusOfFocusChanged(event, oldFocus, newFocus)
+        super().locus_of_focus_changed(event, old_focus, new_focus)
 
     def useFocusMode(self, obj, prevObj=None):
         if self.utilities.isEditableMessage(obj):
-            msg = "THUNDERBIRD: Using focus mode for editable message %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["THUNDERBIRD: Using focus mode for editable message", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return True
 
-        msg = "THUNDERBIRD: %s is not an editable message." % obj
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["THUNDERBIRD:", obj, "is not an editable message."]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
         return super().useFocusMode(obj, prevObj)
 
     def enableStickyBrowseMode(self, inputEvent, forceMessage=False):
-        if self.utilities.isEditableMessage(orca_state.locusOfFocus):
+        if self.utilities.isEditableMessage(focus_manager.get_manager().get_locus_of_focus()):
             return
 
         super().enableStickyBrowseMode(inputEvent, forceMessage)
 
     def enableStickyFocusMode(self, inputEvent, forceMessage=False):
-        if self.utilities.isEditableMessage(orca_state.locusOfFocus):
+        if self.utilities.isEditableMessage(focus_manager.get_manager().get_locus_of_focus()):
             return
 
         super().enableStickyFocusMode(inputEvent, forceMessage)
 
     def togglePresentationMode(self, inputEvent, documentFrame=None):
-        if self._inFocusMode and self.utilities.isEditableMessage(orca_state.locusOfFocus):
+        if self._inFocusMode \
+           and self.utilities.isEditableMessage(focus_manager.get_manager().get_locus_of_focus()):
             return
 
         super().togglePresentationMode(inputEvent, documentFrame)
 
-    def useStructuralNavigationModel(self):
-        """Returns True if structural navigation should be enabled here."""
-
-        if self.utilities.isEditableMessage(orca_state.locusOfFocus):
-            return False
-
-        return super().useStructuralNavigationModel()
-
-    def onFocusedChanged(self, event):
-        """Callback for object:state-changed:focused accessibility events."""
-
-        if not event.detail1:
-            return
-
-        self._lastAutoComplete = ""
-        obj = event.source
-        if self.spellcheck.isAutoFocusEvent(event):
-            orca.setLocusOfFocus(event, event.source, False)
-            self.updateBraille(orca_state.locusOfFocus)
-
-        if not self.utilities.inDocumentContent(obj):
-            super().onFocusedChanged(event)
-            return
-
-        if self.utilities.isEditableMessage(obj):
-            super().onFocusedChanged(event)
-            return
-
-        super().onFocusedChanged(event)
-
-    def onBusyChanged(self, event):
+    def on_busy_changed(self, event):
         """Callback for object:state-changed:busy accessibility events."""
 
+        # TODO - JD: Can this logic be moved to the web script?
         if self.utilities.isEditableMessage(event.source):
             return
 
         if self.inFocusMode():
             return
 
-        obj = event.source
-        if self.utilities.isDocument(obj) and not event.detail1:
-            try:
-                role = orca_state.locusOfFocus.getRole()
-                name = orca_state.locusOfFocus.name
-            except:
-                pass
-            else:
-                if role in [pyatspi.ROLE_FRAME, pyatspi.ROLE_PAGE_TAB] and name:
-                    orca.setLocusOfFocus(event, event.source, False)
+        super().on_busy_changed(event)
 
-            if self.utilities.inDocumentContent():
-                self.speakMessage(obj.name)
-                self._presentMessage(obj)
-
-    def onCaretMoved(self, event):
+    def on_caret_moved(self, event):
         """Callback for object:text-caret-moved accessibility events."""
 
         if self.utilities.isEditableMessage(event.source):
             if event.detail1 == -1:
                 return
-            self.spellcheck.setDocumentPosition(event.source, event.detail1)
-            if self.spellcheck.isActive():
+            self.spellcheck.set_document_position(event.source, event.detail1)
+            if self.spellcheck.is_active():
                 return
 
-        super().onCaretMoved(event)
+        super().on_caret_moved(event)
 
-    def onSelectionChanged(self, event):
+    def on_name_changed(self, event):
+        """Callback for object:property-change:accessible-name events."""
+
+        if AXObject.get_name(event.source) == self.spellcheck.get_misspelled_word():
+            self.spellcheck.present_error_details()
+            return
+
+        super().on_name_changed(event)
+
+    def on_selection_changed(self, event):
         """Callback for object:state-changed:showing accessibility events."""
 
         # We present changes when the list has focus via focus-changed events.
-        if event.source == self.spellcheck.getSuggestionsList():
+        if event.source == self.spellcheck.get_suggestions_list():
             return
 
-        parent = event.source.parent
-        if parent and parent.getRole() == pyatspi.ROLE_COMBO_BOX \
-           and not parent.getState().contains(pyatspi.STATE_FOCUSED):
+        parent = AXObject.get_parent(event.source)
+        if AXUtilities.is_combo_box(parent) and not AXUtilities.is_focused(parent):
             return
 
-        super().onSelectionChanged(event)
+        super().on_selection_changed(event)
 
-    def onSensitiveChanged(self, event):
+    def on_sensitive_changed(self, event):
         """Callback for object:state-changed:sensitive accessibility events."""
 
-        if event.source == self.spellcheck.getChangeToEntry() \
-           and self.spellcheck.presentCompletionMessage():
+        if event.source == self.spellcheck.get_change_to_entry() \
+           and self.spellcheck.present_completion_message():
             return
 
-        super().onSensitiveChanged(event)
+        super().on_sensitive_changed(event)
 
-    def onShowingChanged(self, event):
-        """Callback for object:state-changed:showing accessibility events."""
+    def on_text_deleted(self, event):
+        """Callback for object:text-changed:delete accessibility events."""
 
-        # TODO - JD: Once there are separate scripts for the Gecko toolkit
-        # and the Firefox browser, this method can be deleted. It's here
-        # right now just to prevent the Gecko script from presenting non-
-        # existent browsery autocompletes for Thunderbird.
-
-        default.Script.onShowingChanged(self, event)
-
-    def onTextDeleted(self, event):
-        """Called whenever text is from an object.
-
-        Arguments:
-        - event: the Event
-        """
-
-        obj = event.source
-        parent = obj.parent
-
-        try:
-            role = event.source.getRole()
-            parentRole = parent.getRole()
-        except:
+        if AXUtilities.is_label(event.source) \
+           and AXUtilities.is_status_bar(AXObject.get_parent(event.source)):
             return
 
-        if role == pyatspi.ROLE_LABEL and parentRole == pyatspi.ROLE_STATUS_BAR:
-            return
+        super().on_text_deleted(event)
 
-        super().onTextDeleted(event)
-
-    def onTextInserted(self, event):
+    def on_text_inserted(self, event):
         """Callback for object:text-changed:insert accessibility events."""
 
-        obj = event.source
-        try:
-            role = obj.getRole()
-            parentRole = obj.parent.getRole()
-        except:
+        parent = AXObject.get_parent(event.source)
+        if AXUtilities.is_label(event.source) and AXUtilities.is_status_bar(parent):
             return
 
-        if role == pyatspi.ROLE_LABEL and parentRole == pyatspi.ROLE_STATUS_BAR:
+        if len(event.any_data) > 1 and event.source == self.spellcheck.get_change_to_entry():
             return
-
-        if len(event.any_data) > 1 and obj == self.spellcheck.getChangeToEntry():
-            return
-
-        isSystemEvent = event.type.endswith("system")
 
         # Try to stop unwanted chatter when a message is being replied to.
         # See bgo#618484.
-        if isSystemEvent and self.utilities.isEditableMessage(obj):
+        if event.type.endswith("system") and self.utilities.isEditableMessage(event.source):
             return
 
-        # Speak the autocompleted text, but only if it is different
-        # address so that we're not too "chatty." See bug #533042.
-        if parentRole == pyatspi.ROLE_AUTOCOMPLETE:
-            if len(event.any_data) == 1:
-                default.Script.onTextInserted(self, event)
-                return
+        super().on_text_inserted(event)
 
-            if self._lastAutoComplete and self._lastAutoComplete in event.any_data:
-                return
-
-            # Mozilla cannot seem to get their ":system" suffix right
-            # to save their lives, so we'll add yet another sad hack.
-            try:
-                text = event.source.queryText()
-            except:
-                hasSelection = False
-            else:
-                hasSelection = text.getNSelections() > 0
-            if hasSelection or isSystemEvent:
-                speech.speak(event.any_data)
-                self._lastAutoComplete = event.any_data
-                return
-
-        super().onTextInserted(event)
-
-    def onTextSelectionChanged(self, event):
+    def on_text_selection_changed(self, event):
         """Callback for object:text-selection-changed accessibility events."""
 
-        obj = event.source
-        spellCheckEntry = self.spellcheck.getChangeToEntry()
-        if obj == spellCheckEntry:
+        if event.source == self.spellcheck.get_change_to_entry():
             return
 
-        if self.utilities.isEditableMessage(obj) and self.spellcheck.isActive():
-            text = obj.queryText()
-            selStart, selEnd = text.getSelection(0)
-            self.spellcheck.setDocumentPosition(obj, selStart)
+        _reason = AXUtilities.get_text_event_reason(event)
+        if self.utilities.isEditableMessage(event.source) and self.spellcheck.is_active():
+            selection_start = AXText.get_selection_start_offset(event.source)
+            if selection_start >= 0:
+                self.spellcheck.set_document_position(event.source, selection_start)
             return
 
-        super().onTextSelectionChanged(event)
+        super().on_text_selection_changed(event)
 
-    def onNameChanged(self, event):
-        """Callback for object:property-change:accessible-name events."""
-
-        if event.source.name == self.spellcheck.getMisspelledWord():
-            self.spellcheck.presentErrorDetails()
-            return
-
-        if not self.utilities.lastInputEventWasDelete() \
-           or not self.utilities.isDocument(event.source):
-            return
-
-        speech.speak(obj.name)
-        [obj, offset] = self.utilities.findFirstCaretContext(obj, 0)
-        self.utilities.setCaretPosition(obj, offset)
-
-    def _presentMessage(self, documentFrame):
-        """Presents the first line of the message, or the entire message,
-        depending on the user's sayAllOnLoad setting."""
-
-        [obj, offset] = self.utilities.findFirstCaretContext(documentFrame, 0)
-        self.utilities.setCaretPosition(obj, offset)
-        self.updateBraille(obj)
-
-        if _settingsManager.getSetting('pageSummaryOnLoad'):
-            msg = "THUNDERBIRD: Getting page summary for obj %s" % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            summary = self.utilities.getPageSummary(obj)
-            if summary:
-                self.presentMessage(summary)
-
-        if not _settingsManager.getSetting('sayAllOnLoad'):
-            msg = "THUNDERBIRD: SayAllOnLoad is False. Presenting line."
-            debug.println(debug.LEVEL_INFO, msg, True)
-            contents = self.utilities.getLineContentsAtOffset(obj, offset)
-            self.speakContents(contents)
-            return
-
-        if _settingsManager.getSetting('enableSpeech'):
-            msg = "THUNDERBIRD: SayAllOnLoad is True and speech is enabled"
-            debug.println(debug.LEVEL_INFO, msg, True)
-            self.sayAll(None)
-
-    def toggleFlatReviewMode(self, inputEvent=None):
-        """Toggles between flat review mode and focus tracking mode."""
-
-        # If we're leaving flat review dump the cache. See bug 568658.
-        #
-        if self.flatReviewContext:
-            pyatspi.clearCache()
-
-        return default.Script.toggleFlatReviewMode(self, inputEvent)
-
-    def onWindowActivated(self, event):
+    def on_window_activated(self, event):
         """Callback for window:activate accessibility events."""
 
-        super().onWindowActivated(event)
-        if not self.spellcheck.isCheckWindow(event.source):
+        super().on_window_activated(event)
+        if not self.spellcheck.is_spell_check_window(event.source):
             self.spellcheck.deactivate()
             return
 
-        self.spellcheck.presentErrorDetails()
-        orca.setLocusOfFocus(None, self.spellcheck.getChangeToEntry(), False)
-        self.updateBraille(orca_state.locusOfFocus)
+        self.spellcheck.present_error_details()
+        entry = self.spellcheck.get_change_to_entry()
+        focus_manager.get_manager().set_locus_of_focus(None, entry, False)
+        self.update_braille(entry)
 
-    def onWindowDeactivated(self, event):
+    def on_window_deactivated(self, event):
         """Callback for window:deactivate accessibility events."""
 
-        super().onWindowDeactivated(event)
+        super().on_window_deactivated(event)
         self.spellcheck.deactivate()
         self.utilities.clearContentCache()

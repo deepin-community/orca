@@ -45,6 +45,15 @@ ICON_INDEX_SPEECH = _("on %(index)d of %(total)d")
 # combobox item in a combobox, etc.
 GROUP_INDEX_SPEECH = _("%(index)d of %(total)d")
 
+# Translators: this refers to the position of an item in a list for which the
+# size is unknown. Examples include unlimited scrolling news/article feeds
+# on social media sites, and message lists on services such as gmail where
+# you're currently viewing messages 1-100 out of some huge, unspecified
+# number. Normally Orca announces both the position of the item and the
+# total number (e.g. "3 of 5"). This is the corresponding message for the
+# unknown-count scenario.
+GROUP_INDEX_TOTAL_UNKNOWN_SPEECH = _("item %(index)d")
+
 # Translators: This message describes a list item in a document. Nesting level
 # is how "deep" the item is (e.g., a level of 2 represents a list item inside a
 # list that's inside another list).
@@ -332,7 +341,7 @@ ROLE_HEADING_LEVEL_BRAILLE = _("h%d")
 # Translators: The %(level)d is in reference to a heading level in HTML (e.g.,
 # For <h3>, the level is 3) and the %(role)s is in reference to a previously
 # translated rolename for the heading.
-ROLE_HEADING_LEVEL_SPEECH = _("%(role)s level %(level)d")
+ROLE_HEADING_LEVEL_SPEECH = _("%(role)s %(level)d")
 
 # Translators: This string should be treated as a role describing an object.
 # Examples of roles include "checkbox", "radio button", "paragraph", and "link."
@@ -459,12 +468,6 @@ ROLE_LANDMARK_SEARCH = C_("role", "search")
 # already read.
 ROLE_VISITED_LINK = _("visited link")
 
-# Translators: This string should be treated as a role describing an object.
-# Examples of roles include "checkbox", "radio button", "paragraph", and "link."
-# A menu button is button widget that causes a menu to appear when the user
-# activates the button.
-ROLE_MENU_BUTTON = _("menu button")
-
 # Translators: This string refers to a row or column whose sort-order has been set
 # to ascending.
 SORT_ORDER_ASCENDING = _("sorted ascending")
@@ -505,9 +508,13 @@ STATE_HORIZONTAL = _("horizontal")
 STATE_VERTICAL =  _("vertical")
 
 # Translators: This is a state which applies to a check box.
+# Please don't use the same translation as for "selected",
+# or it will be impossible to differentiate a checkbox in a list-item.
 STATE_CHECKED = C_("checkbox", "checked")
 
 # Translators: This is a state which applies to a check box.
+# Please don't use the same translation as for "not selected",
+# or it will be impossible to differentiate a checkbox in a list-item.
 STATE_NOT_CHECKED = C_("checkbox", "not checked")
 
 # Translators: This is a state which applies to a switch. For an example of

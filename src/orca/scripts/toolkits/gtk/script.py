@@ -25,24 +25,19 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2013-2014 Igalia, S.L."
 __license__   = "LGPL"
 
-import pyatspi
-import time
-
-import orca.debug as debug
-import orca.mouse_review as mouse_review
-import orca.orca as orca
-import orca.orca_state as orca_state
-import orca.scripts.default as default
-import orca.speech as speech
-
+from orca import debug
+from orca import focus_manager
+from orca.scripts import default
+from orca.ax_object import AXObject
+from orca.ax_utilities import AXUtilities
 from .script_utilities import Utilities
+
 
 class Script(default.Script):
 
-    def __init__(self, app):
-        default.Script.__init__(self, app)
+    def get_utilities(self):
+        """Returns the utilities for this script."""
 
-    def getUtilities(self):
         return Utilities(self)
 
     def deactivate(self):
@@ -51,200 +46,113 @@ class Script(default.Script):
         self.utilities.clearCachedObjects()
         super().deactivate()
 
-    def locusOfFocusChanged(self, event, oldFocus, newFocus):
+    def locus_of_focus_changed(self, event, old_focus, new_focus):
         """Handles changes of focus of interest to the script."""
 
-        if self.utilities.isToggleDescendantOfComboBox(newFocus):
-            isComboBox = lambda x: x and x.getRole() == pyatspi.ROLE_COMBO_BOX
-            newFocus = pyatspi.findAncestor(newFocus, isComboBox) or newFocus
-            orca.setLocusOfFocus(event, newFocus, False)
-        elif self.utilities.isInOpenMenuBarMenu(newFocus):
-            window = self.utilities.topLevelObject(newFocus)
-            windowChanged = window and orca_state.activeWindow != window
-            if windowChanged:
-                orca_state.activeWindow = window
-                self.windowActivateTime = time.time()
+        manager = focus_manager.get_manager()
+        if self.utilities.isToggleDescendantOfComboBox(new_focus):
+            new_focus = AXObject.find_ancestor(new_focus, AXUtilities.is_combo_box) or new_focus
+            manager.set_locus_of_focus(event, new_focus, False)
+        elif self.utilities.isInOpenMenuBarMenu(new_focus):
+            window = self.utilities.topLevelObject(new_focus)
+            if window and manager.get_active_window() != window:
+                manager.set_active_window(window)
 
-        super().locusOfFocusChanged(event, oldFocus, newFocus)
+        super().locus_of_focus_changed(event, old_focus, new_focus)
 
-    def onActiveDescendantChanged(self, event):
+    def on_active_descendant_changed(self, event):
         """Callback for object:active-descendant-changed accessibility events."""
 
-        if not self.utilities.isTypeahead(orca_state.locusOfFocus):
-            super().onActiveDescendantChanged(event)
-            return
+        if AXUtilities.is_table_related(event.source):
+            AXObject.clear_cache(event.any_data, True, "active-descendant-changed event.")
+            AXUtilities.clear_all_cache_now(event.source, "active-descendant-changed event.")
 
-        msg = "GTK: locusOfFocus believed to be typeahead. Presenting change."
-        debug.println(debug.LEVEL_INFO, msg, True)
-        self.presentObject(event.any_data)
-
-    def onCheckedChanged(self, event):
-        """Callback for object:state-changed:checked accessibility events."""
-
-        obj = event.source
-        if self.utilities.isSameObject(obj, orca_state.locusOfFocus):
-            default.Script.onCheckedChanged(self, event)
-            return
-
-        # Present changes of child widgets of GtkListBox items
-        isListBox = lambda x: x and x.getRole() == pyatspi.ROLE_LIST_BOX
-        if not pyatspi.findAncestor(obj, isListBox):
-            return
-
-        self.updateBraille(obj)
-        speech.speak(self.speechGenerator.generateSpeech(obj, alreadyFocused=True))
-
-    def onFocus(self, event):
-        """Callback for focus: accessibility events."""
-
-        # NOTE: This event type is deprecated and Orca should no longer use it.
-        # This callback remains just to handle bugs in applications and toolkits
-        # that fail to reliably emit object:state-changed:focused events.
-
-        if self.utilities.eventIsCanvasNoise(event):
-            return
-
-        if self.utilities.isLayoutOnly(event.source):
-            return
-
-        if event.source == mouse_review.reviewer.getCurrentItem():
-            msg = "GTK: Event source is current mouse review item"
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return
-
-        if self.utilities.isTypeahead(orca_state.locusOfFocus) \
-           and "Table" in pyatspi.listInterfaces(event.source) \
-           and not event.source.getState().contains(pyatspi.STATE_FOCUSED):
-            return
-
-        if "Table" in pyatspi.listInterfaces(event.source):
-            selectedChildren = self.utilities.selectedChildren(event.source)
-            if selectedChildren:
-                orca.setLocusOfFocus(event, selectedChildren[0])
+        focus = focus_manager.get_manager().get_locus_of_focus()
+        if AXUtilities.is_table_cell(focus):
+            table = AXObject.find_ancestor(focus, AXUtilities.is_tree_or_tree_table)
+            if table is not None and table != event.source:
+                msg = "GTK: Event is from a different tree or tree table."
+                debug.print_message(debug.LEVEL_INFO, msg, True)
                 return
 
-        ancestor = pyatspi.findAncestor(orca_state.locusOfFocus, lambda x: x == event.source)
-        if not ancestor:
-            orca.setLocusOfFocus(event, event.source)
+        child = AXObject.get_active_descendant_checked(event.source, event.any_data)
+        if child is not None and child != event.any_data:
+            tokens = ["GTK: Bogus any_data suspected. Setting focus to", child]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            focus_manager.get_manager().set_locus_of_focus(event, child)
             return
 
-        if ancestor and "Table" in pyatspi.listInterfaces(ancestor):
-            return
+        msg = "GTK: Passing event to super class for processing."
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+        super().on_active_descendant_changed(event)
 
-        isMenu = lambda x: x and x.getRole() == pyatspi.ROLE_MENU
-        if isMenu(ancestor) and not pyatspi.findAncestor(ancestor, isMenu):
-            return
+    def on_caret_moved(self, event):
+        """Callback for object:text-caret-moved accessibility events."""
 
-        orca.setLocusOfFocus(event, event.source)
+        if not AXUtilities.is_focused(event.source):
+            AXObject.clear_cache(event.source, False, "Work around possibly-missing focused state.")
+        super().on_caret_moved(event)
 
-    def onFocusedChanged(self, event):
+    def on_focused_changed(self, event):
         """Callback for object:state-changed:focused accessibility events."""
 
-        if self.utilities.isUselessPanel(event.source):
-            msg = "GTK: Event source believed to be useless panel"
-            debug.println(debug.LEVEL_INFO, msg, True)
+        focus = focus_manager.get_manager().get_locus_of_focus()
+        if AXObject.is_ancestor(focus, event.source) and AXUtilities.is_focused(focus):
+            msg = "GTK: Ignoring focus change on ancestor of still-focused locusOfFocus"
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return
 
-        super().onFocusedChanged(event)
+        super().on_focused_changed(event)
 
-    def onSelectedChanged(self, event):
+    def on_selected_changed(self, event):
         """Callback for object:state-changed:selected accessibility events."""
 
         if self.utilities.isEntryCompletionPopupItem(event.source):
             if event.detail1:
-                orca.setLocusOfFocus(event, event.source)
+                focus_manager.get_manager().set_locus_of_focus(event, event.source)
                 return
-            if orca_state.locusOfFocus == event.source:
-                orca.setLocusOfFocus(event, None)
+            if focus_manager.get_manager().get_locus_of_focus() == event.source:
+                focus_manager.get_manager().set_locus_of_focus(event, None)
                 return
 
-        role = event.source.getRole()
-        if role in [pyatspi.ROLE_CANVAS, pyatspi.ROLE_ICON] \
-           and self.utilities.handleContainerSelectionChange(event.source.parent):
+        if AXUtilities.is_icon_or_canvas(event.source) \
+           and self.utilities.handleContainerSelectionChange(AXObject.get_parent(event.source)):
             return
 
-        super().onSelectedChanged(event)
+        super().on_selected_changed(event)
 
-    def onSelectionChanged(self, event):
+    def on_selection_changed(self, event):
         """Callback for object:selection-changed accessibility events."""
 
+        focus = focus_manager.get_manager().get_locus_of_focus()
         if self.utilities.isComboBoxWithToggleDescendant(event.source) \
-            and self.utilities.isOrDescendsFrom(orca_state.locusOfFocus, event.source):
-            super().onSelectionChanged(event)
+           and AXObject.is_ancestor(focus, event.source, True):
+            super().on_selection_changed(event)
             return
 
-        isFocused = event.source.getState().contains(pyatspi.STATE_FOCUSED)
-        role = event.source.getRole()
-        if role == pyatspi.ROLE_COMBO_BOX and not isFocused:
+        isFocused = AXUtilities.is_focused(event.source)
+        if AXUtilities.is_combo_box(event.source) and not isFocused:
             return
 
-        if not isFocused and self.utilities.isTypeahead(orca_state.locusOfFocus):
-            msg = "GTK: locusOfFocus believed to be typeahead. Presenting change."
-            debug.println(debug.LEVEL_INFO, msg, True)
-
-            selectedChildren = self.utilities.selectedChildren(event.source)
-            for child in selectedChildren:
-                if not self.utilities.isLayoutOnly(child):
-                    self.presentObject(child)
-            return
-
-        if role == pyatspi.ROLE_LAYERED_PANE \
+        if AXUtilities.is_layered_pane(event.source) \
            and self.utilities.selectedChildCount(event.source) > 1:
             return
 
-        super().onSelectionChanged(event)
+        super().on_selection_changed(event)
 
-    def onShowingChanged(self, event):
+    def on_showing_changed(self, event):
         """Callback for object:state-changed:showing accessibility events."""
 
         if not event.detail1:
-            super().onShowingChanged(event)
+            super().on_showing_changed(event)
             return
 
-        obj = event.source
-        if self.utilities.isPopOver(obj) \
-           or obj.getRole() in [pyatspi.ROLE_ALERT, pyatspi.ROLE_INFO_BAR]:
-            if obj.parent and obj.parent.getRole() == pyatspi.ROLE_APPLICATION:
+        if AXUtilities.get_is_popup_for(event.source) \
+           or AXUtilities.is_alert(event.source) \
+           or AXUtilities.is_info_bar(event.source):
+            if AXUtilities.is_application(AXObject.get_parent(event.source)):
                 return
-            self.presentObject(event.source)
+            self.presentObject(event.source, interrupt=True)
             return
 
-        super().onShowingChanged(event)
-
-    def onTextDeleted(self, event):
-        """Callback for object:text-changed:delete accessibility events."""
-
-        if not self.utilities.isShowingAndVisible(event.source):
-            msg = "GTK: %s is not showing and visible" % event.source
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return
-
-        super().onTextDeleted(event)
-
-    def onTextInserted(self, event):
-        """Callback for object:text-changed:insert accessibility events."""
-
-        if not self.utilities.isShowingAndVisible(event.source):
-            msg = "GTK: %s is not showing and visible" % event.source
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return
-
-        super().onTextInserted(event)
-
-    def onTextSelectionChanged(self, event):
-        """Callback for object:text-selection-changed accessibility events."""
-
-        obj = event.source
-        if not self.utilities.isSameObject(obj, orca_state.locusOfFocus):
-            return
-
-        default.Script.onTextSelectionChanged(self, event)
-
-    def isActivatableEvent(self, event):
-        if self.utilities.eventIsCanvasNoise(event):
-            return False
-
-        if self.utilities.isUselessPanel(event.source):
-            return False
-
-        return super().isActivatableEvent(event)
+        super().on_showing_changed(event)

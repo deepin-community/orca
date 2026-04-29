@@ -27,93 +27,95 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2015 Igalia, S.L."
 __license__   = "LGPL"
 
-import pyatspi
-
 from orca import debug
 from orca import messages
 from orca import spellcheck
-
+from orca.ax_object import AXObject
+from orca.ax_text import AXText
+from orca.ax_utilities import AXUtilities
 
 class SpellCheck(spellcheck.SpellCheck):
+    """Customized support for spellcheck in LibreOffice."""
 
     def __init__(self, script):
-        super().__init__(script, hasChangeToEntry=False)
+        super().__init__(script, has_change_to_entry=False)
+        self._windows = {}
 
-    def _findChildDialog(self, root):
-        if not root:
+    def _find_child_dialog(self, root):
+        if root is None:
             return None
 
-        if root.getRole() == pyatspi.ROLE_DIALOG:
+        if AXUtilities.is_dialog(root):
             return root
 
-        if root.childCount:
-            return self._findChildDialog(root[0])
+        return self._find_child_dialog(AXObject.get_child(root, 0))
 
-        return None
-
-    def _isCandidateWindow(self, window):
-        if self._script.utilities.isDead(window):
-            msg = "SOFFICE: %s is not candidate window because it's dead." % window
-            debug.println(debug.LEVEL_INFO, msg, True)
+    def _is_candidate_window(self, window):
+        if AXObject.is_dead(window):
+            tokens = ["SOFFICE SPELL CHECK:", window, "is not spellcheck window because it's dead."]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return False
 
-        if window and window.childCount and window.getRole() == pyatspi.ROLE_FRAME:
-            child = self._findChildDialog(window[0])
-            if child and child.getRole() == pyatspi.ROLE_DIALOG:
-                isPageTabList = lambda x: x and x.getRole() == pyatspi.ROLE_PAGE_TAB_LIST
-                if pyatspi.findDescendant(child, isPageTabList):
-                    return False
+        rv = self._windows.get(hash(window))
+        if rv is not None:
+            tokens = ["SOFFICE SPELL CHECK:", window, "is spellcheck window:", rv]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return rv
 
-                isComboBox = lambda x: x and x.getRole() == pyatspi.ROLE_COMBO_BOX
-                return pyatspi.findDescendant(child, isComboBox)
+        dialog = self._find_child_dialog(window)
+        if not dialog:
+            self._windows[hash(window)] = False
+            tokens = ["SOFFICE SPELL CHECK:", window,
+                      "is not spellcheck window because the dialog was not found."]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return False
 
-        return False
+        if AXObject.find_descendant(dialog, AXUtilities.is_page_tab_list) is not None:
+            self._windows[hash(window)] = False
+            self._windows[hash(dialog)] = False
+            tokens = ["SOFFICE SPELL CHECK:", dialog,
+                      "is not spellcheck dialog because a page tab list was found."]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return False
 
-    def _findErrorWidget(self, root):
-        isError = lambda x: x and x.getRole() == pyatspi.ROLE_TEXT and x.name \
-                  and x.parent.getRole() != pyatspi.ROLE_COMBO_BOX
-        return pyatspi.findDescendant(root, isError)
+        rv = AXObject.find_descendant(dialog, AXUtilities.is_combo_box) is not None
+        tokens = ["SOFFICE SPELL CHECK:", dialog,
+                  "is spellcheck dialog based on combobox descendant:", rv]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+        self._windows[hash(dialog)] = rv
+        return rv
 
-    def _findSuggestionsList(self, root):
-        isList = lambda x: x and x.getRole() == pyatspi.ROLE_LIST and x.name \
-                  and 'Selection' in x.get_interfaces() \
-                  and x.parent.getRole() != pyatspi.ROLE_COMBO_BOX
-        return pyatspi.findDescendant(root, isList)
+    def _is_error_widget(self, obj):
+        obj_id = AXObject.get_accessible_id(obj)
+        if obj_id.lower().startswith("error"):
+            tokens = ["SPELL CHECK:", obj, f"with id: '{obj_id}' is the error widget"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return True
 
-    def _getSuggestionIndexAndPosition(self, suggestion):
-        index, total = self._script.utilities.getPositionAndSetSize(suggestion)
-        return index + 1, total
+        if not AXObject.supports_editable_text(obj):
+            return False
+        return AXUtilities.is_focusable(obj) and AXUtilities.is_multi_line(obj)
 
-    def getMisspelledWord(self):
-        try:
-            text = self._errorWidget.queryText()
-        except:
-            return ""
-
+    def get_misspelled_word(self):
+        length = AXText.get_character_count(self._error_widget)
         offset, string = 0, ""
-        while 0 <= offset < text.characterCount:
-            attributes, start, end = text.getAttributeRun(offset, False)
-            attrs = dict([attr.split(":", 1) for attr in attributes])
+        while 0 <= offset < length:
+            attrs, start, end = AXText.get_text_attributes_at_offset(self._error_widget, offset)
             if attrs.get("fg-color", "").replace(" ", "") == "255,0,0":
-                return text.getText(start, end)
+                return AXText.get_substring(self._error_widget, start, end)
             offset = max(end, offset + 1)
 
         return string
 
-    def presentContext(self):
-        if not self.isActive():
+    def present_context(self):
+        if not self.is_active():
             return False
 
-        try:
-            text = self._errorWidget.queryText()
-        except:
-            return False
-
-        string = text.getText(0, -1)
+        string = AXText.get_all_text(self._error_widget)
         if not string:
             return False
 
         msg = messages.MISSPELLED_WORD_CONTEXT % string
-        voice = self._script.speechGenerator.voice(string=msg)
+        voice = self._script.speech_generator.voice(string=msg)
         self._script.speakMessage(msg, voice=voice)
         return True

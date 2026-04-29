@@ -17,37 +17,32 @@
 # Free Software Foundation, Inc., Franklin Street, Fifth Floor,
 # Boston MA  02110-1301 USA.
 
-""" Custom script for The notification daemon."""
+# pylint: disable=duplicate-code
 
-__id__        = ""
-__version__   = ""
-__date__      = ""
+"""Custom script for The notification daemon."""
+
+__id__        = "$Id$"
+__version__   = "$Revision$"
+__date__      = "$Date$"
 __copyright__ = "Copyright (c) 2005-2008 Sun Microsystems Inc."
 __license__   = "LGPL"
 
-import pyatspi
-
-import orca.messages as messages
-import orca.scripts.default as default
-import orca.settings as settings
-import orca.speech as speech
-import orca.notification_messages as notification_messages
-
-########################################################################
-#                                                                      #
-# The notification-daemon script class.                                #
-#                                                                      #
-########################################################################
+from orca import messages
+from orca.scripts import default
+from orca import settings
+from orca.ax_text import AXText
+from orca.ax_utilities import AXUtilities
 
 class Script(default.Script):
+    """Custom script for The notification daemon."""
 
-    def onWindowCreated(self, event):
+    def on_window_created(self, event):
         """Callback for window:create accessibility events."""
 
-        hasRole = lambda x: x and x.getRole() == pyatspi.ROLE_LABEL
-        allLabels = pyatspi.findAllDescendants(event.source, hasRole)
-        texts = [self.utilities.displayedText(acc) for acc in allLabels]
-        text = '%s %s' % (messages.NOTIFICATION, ' '.join(texts))
-        speech.speak(text, None, True)
+        texts = [AXText.get_all_text(acc) for acc in AXUtilities.find_all_labels(event.source)]
+        text = f"{messages.NOTIFICATION} {' '.join(texts)}"
+
+        voice = self.speech_generator.voice(obj=event.source, string=text)
+        self.speakMessage(text, voice=voice)
         self.displayBrailleMessage(text, flashTime=settings.brailleFlashTime)
-        notification_messages.saveMessage(text)
+        self.get_notification_presenter().save_notification(text)

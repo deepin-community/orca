@@ -1,9 +1,6 @@
-__all__ = ['clutter',
-           'Chromium',
+__all__ = ['Chromium',
            'gtk',
-           'GAIL',
            'Gecko',
            'J2SE-access-bridge',
            'Qt',
-           'VCL.py',
-           'WebKitGtk']
+           'WebKitGTK']

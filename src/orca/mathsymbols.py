@@ -28,7 +28,8 @@ __license__   = "LGPL"
 import re
 import unicodedata
 
-from .orca_i18n import _, C_
+from . import debug
+from .orca_i18n import C_
 
 fallbackOnUnicodeData = False
 
@@ -37,21 +38,21 @@ SPEAK_ALWAYS = 2
 SPEAK_FOR_CHARS = 3
 speakStyle = SPEAK_ALWAYS
 
-_all = {}
-_alnum = {}
-_arrows = {}
-_operators = {}
-_shapes = {}
-_combining = {}
+_all: dict[str, str] = {}
+_alnum: dict[str, str] = {}
+_arrows: dict[str, str] = {}
+_operators: dict[str, str] = {}
+_shapes: dict[str, str] = {}
+_combining: dict[str, str] = {}
 
 # Note that the following are to help us identify what is likely a math symbol
 # (as opposed to one serving the function of an image in "This way up.")
-_arrows.update(dict.fromkeys(map(chr, range(0x2190, 0x2200))))
-_arrows.update(dict.fromkeys(map(chr, range(0x2750, 0x2800))))
-_arrows.update(dict.fromkeys(map(chr, range(0x2b30, 0x2b50))))
-_operators.update(dict.fromkeys(map(chr, range(0x2220, 0x2300))))
-_operators.update(dict.fromkeys(map(chr, range(0x2a00, 0x2b00))))
-_shapes.update(dict.fromkeys(map(chr, range(0x25a0, 0x2600))))
+_arrows.update(dict.fromkeys(map(chr, range(0x2190, 0x2200)), ""))
+_arrows.update(dict.fromkeys(map(chr, range(0x2750, 0x2800)), ""))
+_arrows.update(dict.fromkeys(map(chr, range(0x2b30, 0x2b50)), ""))
+_operators.update(dict.fromkeys(map(chr, range(0x2220, 0x2300)), ""))
+_operators.update(dict.fromkeys(map(chr, range(0x2a00, 0x2b00)), ""))
+_shapes.update(dict.fromkeys(map(chr, range(0x25a0, 0x2600)), ""))
 
 # Unicode has a huge number of individual symbols to include styles, such as
 # bold, italic, double-struck, etc. These are so far not supported by speech
@@ -1107,7 +1108,17 @@ _monospaceDigits = range(0x1d7f6, 0x1d800)
 _otherDoubleStruck = [0x2102, 0x210d, 0x2115, 0x2119, 0x211a, 0x211d, 0x2124]
 _otherFraktur = [0x212d, 0x210c, 0x2111, 0x211c, 0x2128]
 _otherItalic = [0x210e]
-_otherScript = [0x212c, 0x2130, 0x2131, 0x210b, 0x2110, 0x2112, 0x2133, 0x211b, 0x212f, 0x210a, 0x2134]
+_otherScript = [0x212c,
+                0x2130,
+                0x2131,
+                0x210b,
+                0x2110,
+                0x2112,
+                0x2133,
+                0x211b,
+                0x212f,
+                0x210a,
+                0x2134]
 
 # Translators: Unicode has a large set of characters consisting of a common
 # alphanumeric symbol and a style. For instance, character 1D400 is a bold A,
@@ -2089,10 +2100,12 @@ _operators['\u22f1'] = C_('math symbol', 'down right diagonal ellipsis')
 _operators['\u22f2'] = C_('math symbol', 'element of with long horizontal stroke')
 
 # Translators: this is the spoken representation for the character '⋳' (U+22f3)
-_operators['\u22f3'] = C_('math symbol', 'element of with vertical bar at end of horizontal stroke')
+_operators['\u22f3'] = C_('math symbol',
+                           'element of with vertical bar at end of horizontal stroke')
 
 # Translators: this is the spoken representation for the character '⋴' (U+22f4)
-_operators['\u22f4'] = C_('math symbol', 'small element of with vertical bar at end of horizontal stroke')
+_operators['\u22f4'] = C_('math symbol',
+                          'small element of with vertical bar at end of horizontal stroke')
 
 # Translators: this is the spoken representation for the character '⋵' (U+22f5)
 _operators['\u22f5'] = C_('math symbol', 'element of with dot above')
@@ -2116,7 +2129,8 @@ _operators['\u22fa'] = C_('math symbol', 'contains with long horizontal stroke')
 _operators['\u22fb'] = C_('math symbol', 'contains with vertical bar at end of horizontal stroke')
 
 # Translators: this is the spoken representation for the character '⋼' (U+22fc)
-_operators['\u22fc'] = C_('math symbol', 'small contains with vertical bar at end of horizontal stroke')
+_operators['\u22fc'] = C_('math symbol',
+                          'small contains with vertical bar at end of horizontal stroke')
 
 # Translators: this is the spoken representation for the character '⋽' (U+22fd)
 _operators['\u22fd'] = C_('math symbol', 'contains with overbar')
@@ -2223,16 +2237,16 @@ _RE_COMBINING = None
 def __compileRE():
     global _RE
     try:
-        _RE = re.compile('[%s]' % ''.join(list(_all.keys())), re.UNICODE)
-    except:
+        _RE = re.compile(f"[{''.join(list(_all.keys()))}]", re.UNICODE)
+    except Exception:
         _RE = None
 
 def __compileRE_COMBINING():
     global _RE_COMBINING
     try:
-        _RE_COMBINING = re.compile('.[%s]' % ''.join(list(_combining.keys())),
+        _RE_COMBINING = re.compile(f".[{''.join(list(_combining.keys()))}]",
                                    re.UNICODE)
-    except:
+    except Exception:
         _RE_COMBINING = None
 
 def _getStyleString(symbol):
@@ -2273,7 +2287,7 @@ def updateSymbols(symbolDict):
     _all.update(symbolDict)
 
 def _getSpokenName(symbol, includeStyle):
-    if not symbol in _all:
+    if symbol not in _all:
         return ""
 
     name = _all.get(symbol)
@@ -2288,7 +2302,10 @@ def _getSpokenName(symbol, includeStyle):
     return name
 
 def getCharacterName(symbol):
-    return _getSpokenName(symbol, speakStyle != SPEAK_NEVER)
+    result = _getSpokenName(symbol, speakStyle != SPEAK_NEVER)
+    msg = f"MATHSYMBOLS: Name of '{symbol}' is '{result}'"
+    debug.print_message(debug.LEVEL_INFO, msg, True, True)
+    return result
 
 def adjustForSpeech(string):
     if _RE is None:
@@ -2302,7 +2319,7 @@ def adjustForSpeech(string):
         for pair in combiningPairs:
             name = _combining.get(pair[1])
             if name:
-                string = re.sub(pair, " %s " % (name % pair[0]), string)
+                string = re.sub(pair, f" {name % pair[0]} ", string)
 
     if _RE is not None:
         chars = set(re.findall(_RE, string))
@@ -2310,6 +2327,6 @@ def adjustForSpeech(string):
         for char in chars:
             name = _getSpokenName(char, includeStyle)
             if name:
-                string = re.sub(char, " %s " % name, string)
+                string = re.sub(char, f" {name} ", string)
 
     return string

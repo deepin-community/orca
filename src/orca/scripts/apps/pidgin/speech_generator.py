@@ -17,76 +17,37 @@
 # Free Software Foundation, Inc., Franklin Street, Fifth Floor,
 # Boston MA  02110-1301 USA.
 
+"""Produces speech presentation for accessible objects."""
+
 __id__        = "$Id$"
 __version__   = "$Revision$"
 __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2004-2009 Sun Microsystems Inc."
 __license__   = "LGPL"
 
-import orca.speech_generator as speech_generator
-
-########################################################################
-#                                                                      #
-# Custom SpeechGenerator                                               #
-#                                                                      #
-########################################################################
+from orca import debug
+from orca import speech_generator
 
 class SpeechGenerator(speech_generator.SpeechGenerator):
-    """Overrides _generateExpandableState so that we can provide access
-    to the expanded/collapsed state and node count for the buddy list.
-    """
+    """Produces speech presentation for accessible objects."""
 
-    # pylint: disable-msg=W0142
+    @staticmethod
+    def log_generator_output(func):
+        """Decorator for logging."""
 
-    def __init__(self, script):
-        speech_generator.SpeechGenerator.__init__(self, script)
+        def wrapper(*args, **kwargs):
+            result = func(*args, **kwargs)
+            tokens = [f"PIDGIN SPEECH GENERATOR: {func.__name__}:", result]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return result
+        return wrapper
 
-    def _generateExpandableState(self, obj, **args):
-        result = []
-        if self._script.chat.isInBuddyList(obj):
-            # The Pidgin buddy list consists of two columns. The
-            # column which is set as the expander column and which
-            # also contains the node relationship is hidden.  Hidden
-            # columns are not included among a table's columns.  The
-            # hidden object of interest seems to always immediately
-            # precede the visible object.
-            #
-            expanderCell = obj.parent[obj.getIndexInParent() - 1]
-            if expanderCell:
-                result.extend(
-                    speech_generator.SpeechGenerator._generateExpandableState(
-                        self, expanderCell, **args))
-            else:
-                result.extend(
-                    speech_generator.SpeechGenerator._generateExpandableState(
-                        self, obj, **args))
-        else:
-            result.extend(
-                speech_generator.SpeechGenerator._generateExpandableState(
-                    self, obj, **args))
-        return result
+    @log_generator_output
+    def _generate_state_expanded(self, obj, **args):
+        cell = self._script.utilities.get_expander_cell_for(obj) or obj
+        return super()._generate_state_expanded(cell, **args)
 
-    def _generateNumberOfChildren(self, obj, **args):
-        result = []
-        if self._script.chat.isInBuddyList(obj):
-            # The Pidgin buddy list consists of two columns. The
-            # column which is set as the expander column and which
-            # also contains the node relationship is hidden.  Hidden
-            # columns are not included among a table's columns.  The
-            # hidden object of interest seems to always immediately
-            # precede the visible object.
-            #
-            expanderCell = obj.parent[obj.getIndexInParent() - 1]
-            if expanderCell:
-                result.extend(
-                    speech_generator.SpeechGenerator._generateNumberOfChildren(
-                        self, expanderCell, **args))
-            else:
-                result.extend(
-                    speech_generator.SpeechGenerator._generateNumberOfChildren(
-                        self, obj, **args))
-        else:
-            result.extend(
-                speech_generator.SpeechGenerator._generateNumberOfChildren(
-                    self, obj, **args))
-        return result
+    @log_generator_output
+    def _generate_number_of_children(self, obj, **args):
+        cell = self._script.utilities.get_expander_cell_for(obj) or obj
+        return super()._generate_number_of_children(cell, **args)

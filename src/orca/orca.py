@@ -29,369 +29,42 @@ __copyright__ = "Copyright (c) 2004-2009 Sun Microsystems Inc." \
                 "Copyright (c) 2012 Igalia, S.L."
 __license__   = "LGPL"
 
-import faulthandler
 import gi
-import importlib
 import os
-import pyatspi
-import re
 import signal
-import subprocess
 import sys
 
-try:
-    from gi.repository.Gio import Settings
-    a11yAppSettings = Settings(schema_id='org.gnome.desktop.a11y.applications')
-except:
-    a11yAppSettings = None
-
-try:
-    # This can fail due to gtk not being available.  We want to
-    # be able to recover from that if possible.  The main driver
-    # for this is to allow "orca --text-setup" to work even if
-    # the desktop is not running.
-    #
-    gi.require_version("Gtk", "3.0")
-    from gi.repository import Gtk
-
-    gi.require_version("Gdk", "3.0")
-    from gi.repository import Gdk
-
-    # Note: This last import is here due to bgo #673396.
-    # See bgo#673397 for the rest of the story.
-    gi.require_version("GdkX11", "3.0")
-    from gi.repository.GdkX11 import X11Screen
-except:
-    pass
+gi.require_version("Atspi", "2.0")
+gi.require_version("Gdk", "3.0")
+from gi.repository import Atspi
+from gi.repository import Gdk
+from gi.repository.Gio import Settings
 
 from . import braille
+from . import clipboard
 from . import debug
+from . import debugging_tools_manager
 from . import event_manager
-from . import keybindings
-from . import logger
+from . import focus_manager
+from . import input_event_manager
 from . import messages
 from . import mouse_review
-from . import notification_messages
-from . import orca_state
-from . import orca_platform
+from . import orca_modifier_manager
 from . import script_manager
 from . import settings
 from . import settings_manager
-from . import speech
+from . import speech_and_verbosity_manager
 from . import sound
-from .input_event import BrailleEvent
-
-_eventManager = event_manager.getManager()
-_scriptManager = script_manager.getManager()
-_settingsManager = settings_manager.getManager()
-_logger = logger.getLogger()
-
-def onEnabledChanged(gsetting, key):
-    try:
-        enabled = gsetting.get_boolean(key)
-    except:
-        return
-
-    if key == 'screen-reader-enabled' and not enabled:
-        shutdown()
-
-def getSettingsManager():
-    return _settingsManager
-
-def getLogger():
-    return _logger
-
-EXIT_CODE_HANG = 50
+from .ax_utilities import AXUtilities
 
 # The user-settings module (see loadUserSettings).
 #
 _userSettings = None
 
-# A subset of the original Xmodmap info prior to our stomping on it.
-# Right now, this is just for the user's chosen Orca modifier(s).
-#
-_originalXmodmap = ""
-_orcaModifiers = settings.DESKTOP_MODIFIER_KEYS + settings.LAPTOP_MODIFIER_KEYS
-_capsLockCleared = False
-_restoreOrcaKeys = False
+def loadUserSettings(script=None, skipReloadMessage=False):
+    """(Re)Loads the user settings module, re-initializing things such as speech if necessary."""
 
-########################################################################
-#                                                                      #
-# METHODS TO HANDLE APPLICATION LIST AND FOCUSED OBJECTS               #
-#                                                                      #
-########################################################################
-
-CARET_TRACKING = "caret-tracking"
-FOCUS_TRACKING = "focus-tracking"
-FLAT_REVIEW = "flat-review"
-MOUSE_REVIEW = "mouse-review"
-SAY_ALL = "say-all"
-
-def emitRegionChanged(obj, startOffset=None, endOffset=None, mode=None):
-    """Notifies interested clients that the current region of interest has changed."""
-
-    if startOffset is None:
-        startOffset = 0
-    if endOffset is None:
-        endOffset = startOffset
-    if mode is None:
-        mode = FOCUS_TRACKING
-
-    try:
-        obj.emit("mode-changed::" + mode, 1, "")
-    except:
-        msg = "ORCA: Exception emitting mode-changed notification"
-        debug.println(debug.LEVEL_INFO, msg, True)
-
-    if mode != orca_state.activeMode:
-        msg = "ORCA: Switching active mode from %s to %s" % (orca_state.activeMode, mode)
-        debug.println(debug.LEVEL_INFO, msg, True)
-        orca_state.activeMode = mode
-
-    try:
-        msg = "ORCA: Region of interest: %s (%i, %i)" % (obj, startOffset, endOffset)
-        debug.println(debug.LEVEL_INFO, msg, True)
-        obj.emit("region-changed", startOffset, endOffset)
-    except:
-        msg = "ORCA: Exception emitting region-changed notification"
-        debug.println(debug.LEVEL_INFO, msg, True)
-
-def setLocusOfFocus(event, obj, notifyScript=True, force=False):
-    """Sets the locus of focus (i.e., the object with visual focus) and
-    notifies the script of the change should the script wish to present
-    the change to the user.
-
-    Arguments:
-    - event: if not None, the Event that caused this to happen
-    - obj: the Accessible with the new locus of focus.
-    - notifyScript: if True, propagate this event
-    - force: if True, don't worry if this is the same object as the
-      current locusOfFocus
-    """
-
-    if not force and obj == orca_state.locusOfFocus:
-        msg = "ORCA: Setting locusOfFocus to existing locusOfFocus"
-        debug.println(debug.LEVEL_INFO, msg, True)
-        return
-
-    if event and (orca_state.activeScript and not orca_state.activeScript.app):
-        script = _scriptManager.getScript(event.host_application, event.source)
-        _scriptManager.setActiveScript(script, "Setting locusOfFocus")
-
-    oldFocus = orca_state.locusOfFocus
-    try:
-        oldFocus.getRole()
-    except:
-        msg = "ORCA: Old locusOfFocus is null or defunct"
-        debug.println(debug.LEVEL_INFO, msg, True)
-        oldFocus = None
-
-    if not obj:
-        msg = "ORCA: New locusOfFocus is null (being cleared)"
-        debug.println(debug.LEVEL_INFO, msg, True)
-        orca_state.locusOfFocus = None
-        return
-
-    if orca_state.activeScript:
-        msg = "ORCA: Active script is: %s" % orca_state.activeScript
-        debug.println(debug.LEVEL_INFO, msg, True)
-        if orca_state.activeScript.utilities.isZombie(obj):
-            msg = "ERROR: New locusOfFocus (%s) is zombie. Not updating." % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return
-        if orca_state.activeScript.utilities.isDead(obj):
-            msg = "ERROR: New locusOfFocus (%s) is dead. Not updating." % obj
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return
-
-    msg = "ORCA: Changing locusOfFocus from %s to %s" % (oldFocus, obj)
-    debug.println(debug.LEVEL_INFO, msg, True)
-    orca_state.locusOfFocus = obj
-
-    if not notifyScript:
-        return
-
-    if not orca_state.activeScript:
-        msg = "ORCA: Cannot notify active script because there isn't one"
-        debug.println(debug.LEVEL_INFO, msg, True)
-        return
-
-    orca_state.activeScript.locusOfFocusChanged(event, oldFocus, orca_state.locusOfFocus)
-
-########################################################################
-#                                                                      #
-# METHODS FOR PRE-PROCESSING AND MASSAGING BRAILLE EVENTS.             #
-#                                                                      #
-########################################################################
-
-def _processBrailleEvent(event):
-    """Called whenever a  key is pressed on the Braille display.
-
-    Arguments:
-    - command: the BrlAPI event for the key that was pressed.
-
-    Returns True if the event was consumed; otherwise False
-    """
-
-    consumed = False
-
-    # Braille key presses always interrupt speech.
-    #
-    event = BrailleEvent(event)
-    if event.event['command'] not in braille.dontInteruptSpeechKeys:
-        speech.stop()
-    orca_state.lastInputEvent = event
-
-    try:
-        consumed = _eventManager.processBrailleEvent(event)
-    except:
-        debug.printException(debug.LEVEL_SEVERE)
-
-    if (not consumed) and orca_state.learnModeEnabled:
-        consumed = True
-
-    return consumed
-
-########################################################################
-#                                                                      #
-# METHODS FOR HANDLING INITIALIZATION, SHUTDOWN, AND USE.              #
-#                                                                      #
-########################################################################
-
-def deviceChangeHandler(deviceManager, device):
-    """New keyboards being plugged in stomp on our changes to the keymappings, so we have to re-apply"""
-    source = device.get_source()
-    if source == Gdk.InputSource.KEYBOARD:
-        msg = "ORCA: Keyboard change detected, re-creating the xmodmap"
-        debug.println(debug.LEVEL_INFO, msg, True)
-        _createOrcaXmodmap()
-
-def updateKeyMap(keyboardEvent):
-    """Unsupported convenience method to call sad hacks which should go away."""
-
-    global _restoreOrcaKeys
-    if keyboardEvent.isPressedKey():
-        return
-
-    if keyboardEvent.event_string in settings.orcaModifierKeys \
-       and orca_state.bypassNextCommand:
-        _restoreXmodmap()
-        _restoreOrcaKeys = True
-        return
-
-    if _restoreOrcaKeys and not orca_state.bypassNextCommand:
-        _createOrcaXmodmap()
-        _restoreOrcaKeys = False
-
-def _setXmodmap(xkbmap):
-    """Set the keyboard map using xkbcomp."""
-    p = subprocess.Popen(['xkbcomp', '-w0', '-', os.environ['DISPLAY']],
-        stdin=subprocess.PIPE, stdout=None, stderr=None)
-    p.communicate(xkbmap)
-
-def _setCapsLockAsOrcaModifier(enable):
-    """Enable or disable use of the caps lock key as an Orca modifier key."""
-    interpretCapsLineProg = re.compile(
-        r'^\s*interpret\s+Caps[_+]Lock[_+]AnyOfOrNone\s*\(all\)\s*{\s*$', re.I)
-    normalCapsLineProg = re.compile(
-        r'^\s*action\s*=\s*LockMods\s*\(\s*modifiers\s*=\s*Lock\s*\)\s*;\s*$', re.I)
-    interpretShiftLineProg = re.compile(
-        r'^\s*interpret\s+Shift[_+]Lock[_+]AnyOf\s*\(\s*Shift\s*\+\s*Lock\s*\)\s*{\s*$', re.I)
-    normalShiftLineProg = re.compile(
-        r'^\s*action\s*=\s*LockMods\s*\(\s*modifiers\s*=\s*Shift\s*\)\s*;\s*$', re.I)
-    disabledModLineProg = re.compile(
-        r'^\s*action\s*=\s*NoAction\s*\(\s*\)\s*;\s*$', re.I)
-    normalCapsLine = '        action= LockMods(modifiers=Lock);'
-    normalShiftLine = '        action= LockMods(modifiers=Shift);'
-    disabledModLine = '        action= NoAction();'
-    lines = _originalXmodmap.decode('UTF-8').split('\n')
-    foundCapsInterpretSection = False
-    foundShiftInterpretSection = False
-    modified = False
-    for i, line in enumerate(lines):
-        if not foundCapsInterpretSection and not foundShiftInterpretSection:
-            if interpretCapsLineProg.match(line):
-                foundCapsInterpretSection = True
-            elif interpretShiftLineProg.match(line):
-                foundShiftInterpretSection = True
-        elif foundCapsInterpretSection:
-            if enable:
-                if normalCapsLineProg.match(line):
-                    lines[i] = disabledModLine
-                    modified = True
-            else:
-                if disabledModLineProg.match(line):
-                    lines[i] = normalCapsLine
-                    modified = True
-            if line.find('}'):
-                foundCapsInterpretSection = False
-        else: # foundShiftInterpretSection
-            if enable:
-                if normalShiftLineProg.match(line):
-                    lines[i] = disabledModLine
-                    modified = True
-            else:
-                if disabledModLineProg.match(line):
-                    lines[i] = normalShiftLine
-                    modified = True
-            if line.find('}'):
-                foundShiftInterpretSection = False
-    if modified:
-        _setXmodmap(bytes('\n'.join(lines), 'UTF-8'))
-
-def _createOrcaXmodmap():
-    """Makes an Orca-specific Xmodmap so that the keys behave as we
-    need them to do. This is especially the case for the Orca modifier.
-    """
-
-    global _capsLockCleared
-
-    cmd = []
-    if "Caps_Lock" in settings.orcaModifierKeys \
-       or "Shift_Lock" in settings.orcaModifierKeys:
-        _setCapsLockAsOrcaModifier(True)
-        _capsLockCleared = True
-    elif _capsLockCleared:
-        _setCapsLockAsOrcaModifier(False)
-        _capsLockCleared = False
-
-def _storeXmodmap(keyList):
-    """Save the original xmodmap for the keys in keyList before we alter it.
-
-    Arguments:
-    - keyList: A list of named keys to look for.
-    """
-
-    global _originalXmodmap
-    _originalXmodmap = subprocess.check_output(['xkbcomp', os.environ['DISPLAY'], '-'])
-
-def _restoreXmodmap(keyList=[]):
-    """Restore the original xmodmap values for the keys in keyList.
-
-    Arguments:
-    - keyList: A list of named keys to look for. An empty list means
-      to restore the entire saved xmodmap.
-    """
-
-    global _capsLockCleared
-    _capsLockCleared = False
-    p = subprocess.Popen(['xkbcomp', '-w0', '-', os.environ['DISPLAY']],
-        stdin=subprocess.PIPE, stdout=None, stderr=None)
-    p.communicate(_originalXmodmap)
-
-def setKeyHandling(new):
-    """Toggle use of the new vs. legacy key handling mode.
-    """
-    _eventManager.setKeyHandling(new)
-
-def loadUserSettings(script=None, inputEvent=None, skipReloadMessage=False):
-    """Loads (and reloads) the user settings module, reinitializing
-    things such as speech if necessary.
-
-    Returns True to indicate the input event has been consumed.
-    """
-
-    debug.println(debug.LEVEL_INFO, 'ORCA: Loading User Settings', True)
+    debug.print_message(debug.LEVEL_INFO, 'ORCA: Loading User Settings', True)
 
     global _userSettings
 
@@ -399,458 +72,170 @@ def loadUserSettings(script=None, inputEvent=None, skipReloadMessage=False):
 
     player = sound.getPlayer()
     player.shutdown()
-    speech.shutdown()
+    speech_and_verbosity_manager.get_manager().shutdown_speech()
     braille.shutdown()
+    mouse_review.get_reviewer().deactivate()
 
-    _scriptManager.deactivate()
-
+    event_manager.get_manager().pause_queuing(True, True, "Loading user settings.")
     reloaded = False
     if _userSettings:
-        _profile = _settingsManager.getSetting('activeProfile')[1]
-        try:
-            _userSettings = _settingsManager.getGeneralSettings(_profile)
-            _settingsManager.setProfile(_profile)
-            reloaded = True
-        except ImportError:
-            debug.printException(debug.LEVEL_INFO)
-        except:
-            debug.printException(debug.LEVEL_SEVERE)
+        _profile = settings_manager.get_manager().get_setting('activeProfile')[1]
+        _userSettings = settings_manager.get_manager().get_general_settings(_profile)
+        settings_manager.get_manager().set_profile(_profile)
+        reloaded = True
     else:
-        _profile = _settingsManager.profile
-        try:
-            _userSettings = _settingsManager.getGeneralSettings(_profile)
-        except ImportError:
-            debug.printException(debug.LEVEL_INFO)
-        except:
-            debug.printException(debug.LEVEL_SEVERE)
+        _profile = settings_manager.get_manager().profile
+        _userSettings = settings_manager.get_manager().get_general_settings(_profile)
 
     if not script:
-        script = _scriptManager.getDefaultScript()
+        script = script_manager.get_manager().get_default_script()
 
-    _settingsManager.loadAppSettings(script)
+    settings_manager.get_manager().load_app_settings(script)
 
-    if _settingsManager.getSetting('enableSpeech'):
-        msg = 'ORCA: About to enable speech'
-        debug.println(debug.LEVEL_INFO, msg, True)
-        try:
-            speech.init()
-            if reloaded and not skipReloadMessage:
-                script.speakMessage(messages.SETTINGS_RELOADED)
-        except:
-            debug.printException(debug.LEVEL_SEVERE)
-    else:
-        msg = 'ORCA: Speech is not enabled in settings'
-        debug.println(debug.LEVEL_INFO, msg, True)
+    if settings_manager.get_manager().get_setting('enableSpeech'):
+        speech_and_verbosity_manager.get_manager().start_speech()
+        if reloaded and not skipReloadMessage:
+            script.speakMessage(messages.SETTINGS_RELOADED)
 
-    if _settingsManager.getSetting('enableBraille'):
-        msg = 'ORCA: About to enable braille'
-        debug.println(debug.LEVEL_INFO, msg, True)
-        try:
-            braille.init(_processBrailleEvent)
-        except:
-            debug.printException(debug.LEVEL_WARNING)
-            msg = 'ORCA: Could not initialize connection to braille.'
-            debug.println(debug.LEVEL_WARNING, msg, True)
-    else:
-        msg = 'ORCA: Braille is not enabled in settings'
-        debug.println(debug.LEVEL_INFO, msg, True)
+    if settings_manager.get_manager().get_setting('enableBraille'):
+        braille.init(input_event_manager.get_manager().process_braille_event)
 
+    # TODO - JD: This ultimately belongs in an extension manager.
+    if settings_manager.get_manager().get_setting('enableMouseReview'):
+        mouse_review.get_reviewer().activate()
 
-    if _settingsManager.getSetting('enableMouseReview'):
-        mouse_review.reviewer.activate()
-    else:
-        mouse_review.reviewer.deactivate()
-
-    if _settingsManager.getSetting('enableSound'):
+    if settings_manager.get_manager().get_setting('enableSound'):
         player.init()
 
-    global _orcaModifiers
-    custom = [k for k in settings.orcaModifierKeys if k not in _orcaModifiers]
-    _orcaModifiers += custom
     # Handle the case where a change was made in the Orca Preferences dialog.
-    #
-    if _originalXmodmap:
-        _restoreXmodmap(_orcaModifiers)
-
-    _storeXmodmap(_orcaModifiers)
-    _createOrcaXmodmap()
-
-    _scriptManager.activate()
-    _eventManager.activate()
-
-    debug.println(debug.LEVEL_INFO, 'ORCA: User Settings Loaded', True)
-
-    return True
-
-def _showPreferencesUI(script, prefs):
-    if orca_state.orcaOS:
-        orca_state.orcaOS.showGUI()
-        return
-
-    try:
-        module = importlib.import_module('.orca_gui_prefs', 'orca')
-    except:
-        debug.printException(debug.LEVEL_SEVERE)
-        return
-
-    uiFile = os.path.join(orca_platform.datadir,
-                          orca_platform.package,
-                          "ui",
-                          "orca-setup.ui")
-
-    orca_state.orcaOS = module.OrcaSetupGUI(uiFile, "orcaSetupWindow", prefs)
-    orca_state.orcaOS.init(script)
-    orca_state.orcaOS.showGUI()
-
-def showAppPreferencesGUI(script=None, inputEvent=None):
-    """Displays the user interface to configure the settings for a
-    specific applications within Orca and set up those app-specific
-    user preferences using a GUI.
-
-    Returns True to indicate the input event has been consumed.
-    """
-
-    prefs = {}
-    for key in settings.userCustomizableSettings:
-        prefs[key] = _settingsManager.getSetting(key)
-
-    script = script or orca_state.activeScript
-    _showPreferencesUI(script, prefs)
-
-    return True
-
-def showPreferencesGUI(script=None, inputEvent=None):
-    """Displays the user interface to configure Orca and set up
-    user preferences using a GUI.
-
-    Returns True to indicate the input event has been consumed.
-    """
-
-    prefs = _settingsManager.getGeneralSettings(_settingsManager.profile)
-    script = _scriptManager.getDefaultScript()
-    _showPreferencesUI(script, prefs)
-
-    return True
-
-def helpForOrca(script=None, inputEvent=None, page=""):
-    """Show Orca Help window (part of the GNOME Access Guide).
-
-    Returns True to indicate the input event has been consumed.
-    """
-    orca_state.learnModeEnabled = False
-    uri = "help:orca"
-    if page:
-        uri += "?%s" % page
-    Gtk.show_uri(Gdk.Screen.get_default(),
-                 uri,
-                 Gtk.get_current_event_time())
-    return True
-
-def addKeyGrab(binding):
-    """ Add a key grab for the given key binding. """
-    ret = []
-    for kd in binding.keyDefs():
-        ret.append(orca_state.device.add_key_grab(kd, None))
-    return ret
-
-def removeKeyGrab(id):
-    """ Remove the key grab for the given key binding. """
-    orca_state.device.remove_key_grab(id)
-
-def mapModifier(keycode):
-    return orca_state.device.map_modifier(keycode)
-
-def quitOrca(script=None, inputEvent=None):
-    """Quit Orca. Check if the user wants to confirm this action.
-    If so, show the confirmation GUI otherwise just shutdown.
-
-    Returns True to indicate the input event has been consumed.
-    """
-
-    shutdown()
-
-    return True
-
-def showFindGUI(script=None, inputEvent=None):
-    """Displays the user interface to perform an Orca Find.
-
-    Returns True to indicate the input event has been consumed.
-    """
-
-    try:
-        module = importlib.import_module('.orca_gui_find', 'orca')
-        module.showFindUI()
-    except:
-        debug.printException(debug.LEVEL_SEVERE)
-
-# If True, this module has been initialized.
-#
-_initialized = False
-
-def init(registry):
-    """Initialize the orca module, which initializes the speech and braille
-    modules.  Also builds up the application list, registers for AT-SPI events,
-    and creates scripts for all known applications.
-
-    Returns True if the initialization procedure has run, or False if this
-    module has already been initialized.
-    """
-
-    debug.println(debug.LEVEL_INFO, 'ORCA: Initializing', True)
-
-    global _initialized
-
-    if _initialized and _settingsManager.isScreenReaderServiceEnabled():
-        debug.println(debug.LEVEL_INFO, 'ORCA: Already initialized', True)
-        return False
-
-    # Do not hang on initialization if we can help it.
-    #
-    if settings.timeoutCallback and (settings.timeoutTime > 0):
-        signal.signal(signal.SIGALRM, settings.timeoutCallback)
-        signal.alarm(settings.timeoutTime)
-
-    loadUserSettings()
-
-    if settings.timeoutCallback and (settings.timeoutTime > 0):
-        signal.alarm(0)
-
-    _initialized = True
-    # In theory, we can do this through dbus. In practice, it fails to
-    # work sometimes. Until we know why, we need to leave this as-is
-    # so that we respond when gnome-control-center is used to stop Orca.
-    if a11yAppSettings:
-        a11yAppSettings.connect('changed', onEnabledChanged)
-
-    debug.println(debug.LEVEL_INFO, 'ORCA: Initialized', True)
-
-    return True
-
-def start(registry, cacheValues):
-    """Starts Orca."""
-
-    debug.println(debug.LEVEL_INFO, 'ORCA: Starting', True)
-
-    if not _initialized:
-        init(registry)
-
-    # Do not hang on startup if we can help it.
-    #
-    if settings.timeoutCallback and (settings.timeoutTime > 0):
-        signal.signal(signal.SIGALRM, settings.timeoutCallback)
-        signal.alarm(settings.timeoutTime)
-
-    if settings.timeoutCallback and (settings.timeoutTime > 0):
-        signal.alarm(0)
-
-    if cacheValues:
-        pyatspi.setCacheLevel(pyatspi.CACHE_PROPERTIES)
-
-    # Event handlers for input devices being plugged in/unplugged.
-    # Used to re-create the Xmodmap when a new keyboard is plugged in.
-    # Necessary, because plugging in a new keyboard resets the Xmodmap
-    # and stomps our changes
-    display = Gdk.Display.get_default()
-    devmanager=display.get_device_manager()
-    devmanager.connect("device-added", deviceChangeHandler)
-    devmanager.connect("device-removed", deviceChangeHandler)
-
-    Gdk.notify_startup_complete()
-    msg = 'ORCA: Startup complete notification made'
-    debug.println(debug.LEVEL_INFO, msg, True)
-
-    debug.println(debug.LEVEL_INFO, 'ORCA: Starting registry', True)
-    registry.start(gil=False)
-
-def die(exitCode=1):
-    pid = os.getpid()
-    if exitCode == EXIT_CODE_HANG:
-        # Someting is hung and we wish to abort.
-        os.kill(pid, signal.SIGKILL)
-        return
-
-    shutdown()
-    sys.exit(exitCode)
-    if exitCode > 1:
-        os.kill(pid, signal.SIGTERM)
+    orca_modifier_manager.get_manager().refresh_orca_modifiers("Loading user settings.")
+    event_manager.get_manager().pause_queuing(False, False, "User settings loaded.")
+    debug.print_message(debug.LEVEL_INFO, "ORCA: User Settings Loaded", True)
 
 def timeout(signum=None, frame=None):
     msg = 'TIMEOUT: something has hung. Aborting.'
-    debug.println(debug.LEVEL_SEVERE, msg, True)
-    debug.printStack(debug.LEVEL_SEVERE)
-    debug.examineProcesses(force=True)
-    die(EXIT_CODE_HANG)
+    debug.print_message(debug.LEVEL_SEVERE, msg, True)
+    debugging_tools_manager.get_manager().print_running_applications(force=True)
+    os.kill(os.getpid(), signal.SIGKILL)
 
-def shutdown(script=None, inputEvent=None):
-    """Exits Orca.  Unregisters any event listeners and cleans up.
+def shutdown(script=None, inputEvent=None, signum=None):
+    """Exits Orca. Returns True if shutdown ran to completion."""
 
-    Returns True if the shutdown procedure ran or False if this module
-    was never initialized.
-    """
+    debug.print_message(debug.LEVEL_INFO, "ORCA: Shutting down", True)
+    signal.signal(signal.SIGALRM, timeout)
+    signal.alarm(5)
 
-    debug.println(debug.LEVEL_INFO, 'ORCA: Shutting down', True)
+    orca_modifier_manager.get_manager().unset_orca_modifiers("Shutting down.")
+    script = script_manager.get_manager().get_active_script()
+    if script is not None:
+        script.presentationInterrupt()
+        script.presentMessage(messages.STOP_ORCA, resetStyles=False)
 
-    global _initialized
+    # Pause event queuing first so that it clears its queue and will not accept new
+    # events. Then let the script manager unregister script event listeners as well
+    # as key grabs. Finally deactivate the event manager, which will also cause the
+    # Atspi.Device to be set to None.
+    event_manager.get_manager().pause_queuing(True, True, "Shutting down.")
+    script_manager.get_manager().deactivate()
+    event_manager.get_manager().deactivate()
 
-    if not _initialized:
-        return False
-
-    # Try to say goodbye, but be defensive if something has hung.
-    #
-    if settings.timeoutCallback and (settings.timeoutTime > 0):
-        signal.signal(signal.SIGALRM, settings.timeoutCallback)
-        signal.alarm(settings.timeoutTime)
-
-    orca_state.activeScript.presentMessage(messages.STOP_ORCA, resetStyles=False)
-
-    _scriptManager.deactivate()
-    _eventManager.deactivate()
+    # TODO - JD: This ultimately belongs in an extension manager.
+    clipboard.get_presenter().deactivate()
+    mouse_review.get_reviewer().deactivate()
 
     # Shutdown all the other support.
     #
     if settings.enableSpeech:
-        speech.shutdown()
+        speech_and_verbosity_manager.get_manager().shutdown_speech()
     if settings.enableBraille:
         braille.shutdown()
     if settings.enableSound:
         player = sound.getPlayer()
         player.shutdown()
 
-    if settings.timeoutCallback and (settings.timeoutTime > 0):
-        signal.alarm(0)
-
-    _initialized = False
-    _restoreXmodmap(_orcaModifiers)
-
-    debug.println(debug.LEVEL_INFO, 'ORCA: Stopping registry', True)
-    pyatspi.Registry.stop()
-
-    debug.println(debug.LEVEL_INFO, 'ORCA: Shutdown complete', True)
-
+    signal.alarm(0)
+    debug.print_message(debug.LEVEL_INFO, 'ORCA: Quitting Atspi main event loop', True)
+    Atspi.event_quit()
+    debug.print_message(debug.LEVEL_INFO, 'ORCA: Shutdown complete', True)
     return True
 
-exitCount = 0
 def shutdownOnSignal(signum, frame):
-    global exitCount
+    signalString = f'({signal.strsignal(signum)})'
+    msg = f"ORCA: Shutting down and exiting due to signal={signum} {signalString}"
+    debug.print_message(debug.LEVEL_INFO, msg, True)
+    shutdown(signum=signum)
 
-    try:
-        # Requires python 3.8
-        signalString = '(%s)' % signal.strsignal(signum)
-    except:
-        signalString = ''
-
-    msg = 'ORCA: Shutting down and exiting due to signal=%d %s' % \
-        (signum, signalString)
-    debug.println(debug.LEVEL_INFO, msg, True)
-
-    # Well...we'll try to exit nicely, but if we keep getting called,
-    # something bad is happening, so just quit.
-    #
-    if exitCount:
-        die(signum)
-    else:
-        exitCount += 1
-
-    # Try to do a graceful shutdown if we can.
-    #
-    if settings.timeoutCallback and (settings.timeoutTime > 0):
-        signal.signal(signal.SIGALRM, settings.timeoutCallback)
-        signal.alarm(settings.timeoutTime)
-
-    try:
-        if _initialized:
-            shutdown()
-        else:
-            # We always want to try to shutdown speech since the
-            # speech servers are very persistent about living.
-            #
-            speech.shutdown()
-            shutdown()
-        cleanExit = True
-    except:
-        cleanExit = False
-
-    if settings.timeoutCallback and (settings.timeoutTime > 0):
-        signal.alarm(0)
-
-    if not cleanExit:
-        die(EXIT_CODE_HANG)
-
-def crashOnSignal(signum, frame):
-    signal.signal(signum, signal.SIG_DFL)
-    _restoreXmodmap(_orcaModifiers)
-    os.kill(os.getpid(), signum)
-
-def main(cacheValues=True):
+def main():
     """The main entry point for Orca.  The exit codes for Orca will
     loosely be based on signals, where the exit code will be the
     signal used to terminate Orca (if a signal was used).  Otherwise,
     an exit code of 0 means normal completion and an exit code of 50
     means Orca exited because of a hang."""
 
-    msg = "ORCA: Launching version %s" % orca_platform.version
-    if orca_platform.revision:
-        msg += " (rev %s)" % orca_platform.revision
-    debug.println(debug.LEVEL_INFO, msg, True)
+    manager = debugging_tools_manager.get_manager()
+    manager.print_session_details()
+    manager.print_running_applications(force=False)
 
-    if debug.debugFile and os.path.exists(debug.debugFile.name):
-        faulthandler.enable(file=debug.debugFile, all_threads=True)
-    else:
-        faulthandler.enable(all_threads=False)
-
-    # Method to call when we think something might be hung.
-    #
-    settings.timeoutCallback = timeout
-
-    # Various signal handlers we want to listen for.
-    #
     signal.signal(signal.SIGHUP, shutdownOnSignal)
     signal.signal(signal.SIGINT, shutdownOnSignal)
     signal.signal(signal.SIGTERM, shutdownOnSignal)
     signal.signal(signal.SIGQUIT, shutdownOnSignal)
-    signal.signal(signal.SIGSEGV, crashOnSignal)
 
-    debug.println(debug.LEVEL_INFO, "ORCA: Enabling accessibility (if needed).", True)
-    if not _settingsManager.isAccessibilityEnabled():
-        _settingsManager.setAccessibility(True)
+    debug.print_message(debug.LEVEL_INFO, "ORCA: Enabling accessibility (if needed).", True)
+    if not settings_manager.get_manager().is_accessibility_enabled():
+        settings_manager.get_manager().set_accessibility(True)
 
-    debug.println(debug.LEVEL_INFO, "ORCA: Initializing ATSPI registry.", True)
-    init(pyatspi.Registry)
-    debug.println(debug.LEVEL_INFO, "ORCA: ATSPI registry initialized.", True)
+    loadUserSettings()
 
-    try:
-        message = messages.START_ORCA
-        script = _scriptManager.getDefaultScript()
-        script.presentMessage(message)
-    except:
-        debug.printException(debug.LEVEL_SEVERE)
-
-    script = orca_state.activeScript
-    if script:
-        window = script.utilities.activeWindow()
-        if window and not orca_state.locusOfFocus:
-            try:
-                app = window.getApplication()
-            except:
-                msg = "ORCA: Exception getting app for %s" % window
-                debug.println(debug.LEVEL_INFO, msg, True)
-            else:
-                script = _scriptManager.getScript(app, window)
-                _scriptManager.setActiveScript(script, "Launching.")
-
-            setLocusOfFocus(None, window)
-            focusedObject = script.utilities.focusedObject(window)
-            if focusedObject:
-                setLocusOfFocus(None, focusedObject)
-                script = _scriptManager.getScript(focusedObject.getApplication(), focusedObject)
-                _scriptManager.setActiveScript(script, "Found focused object.")
+    def _on_enabled_changed(gsetting, key):
+        enabled = gsetting.get_boolean(key)
+        msg = f"ORCA: {key} changed to {enabled}."
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+        if key == "screen-reader-enabled" and not enabled:
+            shutdown()
 
     try:
-        debug.println(debug.LEVEL_INFO, "ORCA: Starting ATSPI registry.", True)
-        start(pyatspi.Registry, cacheValues) # waits until we stop the registry
-    except:
-        debug.println(debug.LEVEL_SEVERE, "ORCA: Exception starting ATSPI registry.", True)
-        die(EXIT_CODE_HANG)
+        _a11y_applications_gsetting = Settings(schema_id="org.gnome.desktop.a11y.applications")
+        connection = _a11y_applications_gsetting.connect("changed", _on_enabled_changed)
+        msg = f"ORCA: Connected to a11y applications gsetting: {bool(connection)}"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+    except Exception as error:
+        msg = f"ORCA: Exception connecting to a11y applications gsetting: {error}"
+        debug.print_message(debug.LEVEL_SEVERE, msg, True)
+
+    script = script_manager.get_manager().get_default_script()
+    script.presentMessage(messages.START_ORCA)
+
+    event_manager.get_manager().activate()
+    window = AXUtilities.find_active_window()
+    if window and not focus_manager.get_manager().get_locus_of_focus():
+        app = AXUtilities.get_application(window)
+
+        # TODO - JD: Consider having the focus tracker update the active script.
+        script = script_manager.get_manager().get_script(app, window)
+        script_manager.get_manager().set_active_script(script, "Launching.")
+        focus_manager.get_manager().set_active_window(
+            window, app, set_window_as_focus=True, notify_script=True)
+
+        # TODO - JD: Consider having the focus tracker update the active script.
+        focusedObject = focus_manager.get_manager().find_focused_object()
+        if focusedObject:
+            focus_manager.get_manager().set_locus_of_focus(None, focusedObject)
+            script = script_manager.get_manager().get_script(
+                AXUtilities.get_application(focusedObject), focusedObject)
+            script_manager.get_manager().set_active_script(script, "Found focused object.")
+
+    script_manager.get_manager().activate()
+    clipboard.get_presenter().activate()
+    Gdk.notify_startup_complete()
+
+    try:
+        debug.print_message(debug.LEVEL_INFO, "ORCA: Starting Atspi main event loop", True)
+        Atspi.event_main()
+    except Exception as error:
+        msg = f"ORCA: Exception starting ATSPI registry: {error}"
+        debug.print_message(debug.LEVEL_SEVERE, msg, True)
+        os.kill(os.getpid(), signal.SIGKILL)
     return 0
 
 if __name__ == "__main__":

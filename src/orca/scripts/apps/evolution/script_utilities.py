@@ -19,110 +19,81 @@
 # Free Software Foundation, Inc., Franklin Street, Fifth Floor,
 # Boston MA  02110-1301 USA.
 
+"""Custom script utilities for Evolution."""
+
 __id__        = "$Id$"
 __version__   = "$Revision$"
 __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2015 Igalia, S.L."
 __license__   = "LGPL"
 
-import pyatspi
+from orca import input_event_manager
+from orca import focus_manager
+from orca.scripts.toolkits import gtk
+from orca.scripts.toolkits import WebKitGTK
+from orca.ax_object import AXObject
+from orca.ax_table import AXTable
+from orca.ax_utilities import AXUtilities
 
-import orca.scripts.toolkits.gtk as gtk
-import orca.scripts.toolkits.WebKitGtk as WebKitGtk
 
-class Utilities(WebKitGtk.Utilities, gtk.Utilities):
+class Utilities(WebKitGTK.Utilities, gtk.Utilities):
+    """Custom script utilities for Evolution."""
+    def is_message_list_status_cell(self, obj):
+        """Returns True if obj is a message list status cell."""
 
-    def __init__(self, script):
-        super().__init__(script)
-
-    def isComposeMessageBody(self, obj):
-        if not obj.getState().contains(pyatspi.STATE_EDITABLE):
+        if not self.is_message_list_toggle_cell(obj):
             return False
 
-        return self.isEmbeddedDocument(obj)
-
-    def isReceivedMessage(self, obj):
-        if obj.getState().contains(pyatspi.STATE_EDITABLE):
+        headers = AXTable.get_column_headers(obj)
+        if not headers:
             return False
 
-        return self.isEmbeddedDocument(obj)
+        return headers[0] and AXObject.get_name(headers[0]) != AXObject.get_name(obj)
 
-    def isReceivedMessageHeader(self, obj):
-        if not (obj and obj.getRole() == pyatspi.ROLE_TABLE):
-            return False
+    def is_message_list_toggle_cell(self, obj):
+        """Returns True if obj is a message list toggle cell."""
 
-        return self.isReceivedMessage(obj.parent)
-
-    def isReceivedMessageContent(self, obj):
-        if not (obj and obj.getRole() == pyatspi.ROLE_SECTION):
-            return False
-
-        return self.isReceivedMessage(obj.parent)
-
-    def isComposeAutocomplete(self, obj):
-        if not (obj and obj.getRole() == pyatspi.ROLE_TABLE):
-            return False
-
-        if not obj.getState().contains(pyatspi.STATE_MANAGES_DESCENDANTS):
-            return False
-
-        topLevel = self.topLevelObject(obj)
-        return topLevel and topLevel.getRole() == pyatspi.ROLE_WINDOW
-
-    def findMessageBodyChild(self, root):
-        candidate = pyatspi.findDescendant(root, self.isDocument)
-        if self.isEmbeddedDocument(candidate):
-            return self.findMessageBodyChild(candidate)
-
-        return candidate
-
-    def isMessageListStatusCell(self, obj):
-        if not self.isMessageListToggleCell(obj):
-            return False
-
-        header = self.columnHeaderForCell(obj)
-        return header and header.name != obj.name
-
-    def isMessageListToggleCell(self, obj):
-        if self.isWebKitGtk(obj):
+        if self.isWebKitGTK(obj):
             return False
 
         if not gtk.Utilities.hasMeaningfulToggleAction(self, obj):
             return False
 
-        if not obj.name:
+        if not AXObject.get_name(obj):
             return False
 
         return True
 
-    def realActiveDescendant(self, obj):
-        if self.isWebKitGtk(obj):
-            return super().realActiveDescendant(obj)
+    def is_ignorable_event_from_document_preview(self, event):
+        """Returns True if event is from a document preview and can be ignored."""
 
-        # This is some mystery child of the 'Messages' panel which fails to show
-        # up in the hierarchy or emit object:state-changed:focused events.
-        if obj.getRole() == pyatspi.ROLE_LAYERED_PANE:
-            isTreeTable = lambda x: x and x.getRole() == pyatspi.ROLE_TREE_TABLE
-            return pyatspi.utils.findDescendant(obj, isTreeTable) or obj
-
-        return gtk.Utilities.realActiveDescendant(self, obj)
-
-    def setCaretAtStart(self, obj):
-        if self.isReceivedMessageContent(obj):
-            obj = self.findMessageBodyChild(obj) or obj
-
-        child, index = super().setCaretAtStart(obj)
-        if child and index == -1:
-            child, index = super().setCaretAtStart(child)
-
-        return child, index
-
-    def treatAsBrowser(self, obj):
-        if not self.isEmbeddedDocument(obj):
+        if not self.is_document_preview(event.source):
             return False
 
-        isSplitPane = lambda x: x and x.getRole() == pyatspi.ROLE_SPLIT_PANE
-        if pyatspi.utils.findAncestor(obj, isSplitPane):
+        if not input_event_manager.get_manager().last_event_was_unmodified_arrow():
+            return False
+
+        focus = focus_manager.get_manager().get_locus_of_focus()
+        if self.isWebKitGTK(focus):
+            return False
+        if not AXUtilities.is_table_cell(focus):
+            return False
+        if not AXObject.find_ancestor(focus, AXUtilities.is_tree_or_tree_table):
             return False
 
         return True
+
+    def is_document_preview(self, obj):
+        """Returns True if obj is or descends from the preview document."""
+
+        if not self.isWebKitGTK(obj):
+            return False
+
+        if AXUtilities.is_document(obj):
+            document = obj
+        else:
+            document = AXObject.find_ancestor(obj, AXUtilities.is_document)
+        if not document:
+            return False
+
+        return AXObject.find_ancestor(document, AXUtilities.is_page_tab)

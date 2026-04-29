@@ -3,22 +3,22 @@
 # This file is distributed under the same license as the orca help.
 #
 # Gabor Kelemen <kelemeng at gnome dot hu>, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018.
-# Attila Hammer <hammera at pickup dot hu>, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2018, 2020, 2021.
+# Attila Hammer <hammera at pickup dot hu>, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2018, 2020, 2021, 2023.
 # Balázs Úr <ur.balazs at fsf dot hu>, 2019.
 msgid ""
 msgstr ""
 "Project-Id-Version: orca-help master\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2021-08-25 11:17+0000\n"
-"PO-Revision-Date: 2021-08-26 12:07+0000\n"
+"POT-Creation-Date: 2023-08-05 19:09+0000\n"
+"PO-Revision-Date: 2023-08-06 13:53+0200\n"
 "Last-Translator: Attila Hammer <hammera at pickup dot hu>\n"
 "Language-Team: Hungarian <gnome-hu-list at gnome dot org>\n"
 "Language: hu\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"X-Generator: Poedit 2.0.6\n"
 "Plural-Forms: nplurals=2; plural=(n!=1);\n"
+"X-Generator: Poedit 2.3\n"
 
 #. Put one translator per line, in the form NAME <EMAIL>, YEAR1, YEAR2
 msgctxt "_"
@@ -61,7 +61,7 @@ msgstr "Objektumok könyvjelzőzése és lekérése"
 #: C/howto_profiles.page:8 C/howto_setting_up_orca.page:12
 #: C/howto_structural_navigation.page:12 C/howto_tables.page:10
 #: C/howto_text_attributes.page:10 C/howto_the_orca_modifier.page:11
-#: C/howto_toggling_caps_lock.page:8 C/howto_whereami.page:10 C/index.page:9
+#: C/howto_toggling_caps_lock.page:8 C/howto_whereami.page:10 C/index.page:10
 #: C/introduction.page:10 C/preferences_braille.page:11
 #: C/preferences_chat.page:11 C/preferences_web.page:12
 #: C/preferences_general.page:11 C/preferences_introduction.page:8
@@ -91,7 +91,7 @@ msgstr "Joanmarie Diggs"
 #: C/howto_setting_up_orca.page:16 C/howto_structural_navigation.page:16
 #: C/howto_tables.page:14 C/howto_text_attributes.page:14
 #: C/howto_the_orca_modifier.page:15 C/howto_toggling_caps_lock.page:12
-#: C/howto_whereami.page:14 C/index.page:13 C/introduction.page:14
+#: C/howto_whereami.page:14 C/index.page:14 C/introduction.page:14
 #: C/preferences_braille.page:15 C/preferences_chat.page:15
 #: C/preferences_web.page:16 C/preferences_general.page:15
 #: C/preferences_introduction.page:12 C/preferences_key_bindings.page:16
@@ -1323,7 +1323,7 @@ msgid "<app>Orca</app>'s Commands"
 msgstr "Az <app>Orka</app> billentyűparancsai"
 
 #. (itstool) path: section/title
-#: C/commands.page:17 C/index.page:36
+#: C/commands.page:17 C/index.page:35
 msgid "Getting Started"
 msgstr "Kezdeti lépések"
 
@@ -1338,7 +1338,7 @@ msgid "Reading Web Pages and Other Documents"
 msgstr "Weboldalak és más dokumentumok olvasása"
 
 #. (itstool) path: section/title
-#: C/commands.page:26 C/index.page:42
+#: C/commands.page:26 C/index.page:41
 msgid "Reviewing and Interacting with Screen Contents"
 msgstr "Képernyőtartalom áttekintése és kezelése"
 
@@ -1598,14 +1598,6 @@ msgstr "Részletes információ egy hivatkozásról"
 
 #. (itstool) path: section/p
 #: C/commands_reading.page:231
-#| msgid ""
-#| "If you are on a link, <app>Orca</app>'s Basic Where Am I command can be "
-#| "used to announce the details associated with the link such as the link "
-#| "type, if the link is visited, the site description, and file size. If you "
-#| "would instead prefer dedicated command for this purpose, you can bind "
-#| "<app>Orca</app>'s Speak Link Details command to a keystroke. Please see "
-#| "<link xref=\"howto_key_bindings\"> Modifying Keybindings</link> for "
-#| "information on how to do so."
 msgid ""
 "If you are on a link, <app>Orca</app>'s Basic Where Am I command can be used "
 "to announce the details associated with the link such as the link type, if "
@@ -2033,13 +2025,11 @@ msgstr "Űrlap-navigációs parancsok"
 #. (itstool) path: item/p
 #: C/commands_structural_navigation.page:133
 msgid ""
-"Next and previous form field: <keyseq><key>Orca Modifier</key><key>Tab</"
-"key></keyseq> and <keyseq><key>Orca Modifier</key><key>Shift</key><key>Tab</"
-"key></keyseq>"
+"Next and previous form field: <keyseq><key>F</key></keyseq> and "
+"<keyseq><key>Shift</key><key>F</key></keyseq>"
 msgstr ""
-"Ugrás a következő vagy az előző űrlapmezőre: <keyseq><key>Orka módosító</"
-"key><key>Tab</key></keyseq> és <keyseq><key>Orka módosító</key><key>Shift</"
-"key><key>Tab</key></keyseq>"
+"Ugrás a következő vagy előző űrlapmezőre: <keyseq><key>F</key></keyseq> és "
+"<keyseq><key>Shift</key><key>F</key></keyseq>"
 
 #. (itstool) path: item/p
 #: C/commands_structural_navigation.page:140
@@ -2613,6 +2603,13 @@ msgstr ""
 
 #. (itstool) path: item/p
 #: C/commands_time_date_notifications.page:56
+msgid "Present the next notification message: (Unbound)"
+msgstr ""
+"A következő értesítés megjelenítése: nincs előre meghatározott "
+"billentyűtársítás"
+
+#. (itstool) path: item/p
+#: C/commands_time_date_notifications.page:59
 msgid "Present list of all notification messages: (Unbound)"
 msgstr ""
 "Az értesítések listájának megjelenítése: nincs előre meghatározott "
@@ -3180,7 +3177,7 @@ msgstr "Billentyűtársítás hozzárendelése egy nem kiosztott funkcióhoz"
 #. (itstool) path: item/p
 #: C/howto_key_bindings.page:23 C/howto_key_bindings.page:60
 #: C/howto_key_bindings.page:92 C/howto_key_bindings.page:113
-#: C/howto_keyboard_layout.page:45 C/howto_the_orca_modifier.page:53
+#: C/howto_keyboard_layout.page:45
 msgid ""
 "Get into the <link xref=\"preferences\">Orca Preferences</link> dialog by "
 "pressing <keyseq><key>Orca Modifier</key><key>Space</key></keyseq>."
@@ -4819,6 +4816,20 @@ msgstr ""
 msgid "Changing the Orca Modifier"
 msgstr "Az Orka módosítóbillentyű megváltoztatása"
 
+#. (itstool) path: item/p
+#: C/howto_the_orca_modifier.page:53
+msgid ""
+"Get into the <link xref=\"preferences\">Orca Preferences</link> dialog by "
+"pressing <keyseq><key>Orca Modifier</key><key>Space</key></keyseq>. "
+"Alternatively, you can start Orca with the preferences dialog open from a "
+"terminal: type <cmd>orca -s</cmd> and press <key>Return</key>."
+msgstr ""
+"Az <link xref=\"preferences\">Orka beállítások</link> párbeszédpanel "
+"megnyitásához nyomja meg az <keyseq><key>Orka módosító</key><key>Szóköz</"
+"key></keyseq> billentyűkombinációt. Alternatív megoldásként megjelenítheti "
+"az Orka beállítások  párbeszédablakát, ha a Terminálban begépeli az "
+"<cmd>orca -s</cmd> parancsot, majd lenyomja az <key>ENTER</key> billentyűt."
+
 # Megjegyzés: Itt viszont maradjon a vezérlőelem-típus megnevezés (kombinált listamező).
 #. (itstool) path: item/p
 #: C/howto_the_orca_modifier.page:62
@@ -5103,18 +5114,30 @@ msgstr ""
 
 #. (itstool) path: info/title
 #: C/index.page:6
+#| msgid "<_:media-1/> <app>Orca</app> Screen Reader"
 msgctxt "text"
-msgid "Orca Screen Reader"
-msgstr "Orka képernyőolvasó"
+msgid "<app>Orca</app> Screen Reader"
+msgstr ""
+"Az <app>Orka</app> képernyőolvasó használata"
 
 #. (itstool) path: info/title
 #: C/index.page:7
+#| msgid "<_:media-1/> <app>Orca</app> Screen Reader"
+msgctxt "link:trail"
+msgid "<app>Orca</app> Screen Reader"
+msgstr ""
+"Az <app>Orka</app> képernyőolvasó használata"
+
+#. (itstool) path: info/title
+#: C/index.page:8
+#| msgid "<_:media-1/> <app>Orca</app> Screen Reader"
 msgctxt "link"
-msgid "Introduction to the <app>Orca</app> Screen Reader"
-msgstr "Az <app>Orka</app> képernyőolvasó bemutatása"
+msgid "<app>Orca</app> Screen Reader"
+msgstr ""
+"Az <app>Orka</app> képernyőolvasó használata"
 
 #. (itstool) path: info/desc
-#: C/index.page:16
+#: C/index.page:17
 msgid ""
 "Orca is a free, open source, flexible, and extensible screen reader that "
 "provides access to the graphical desktop via speech and refreshable braille."
@@ -5124,23 +5147,18 @@ msgstr ""
 "személyre szabható kombinációjának használatával teszi elérhetővé az asztali "
 "környezetet."
 
-#. (itstool) path: media/span
-#: C/index.page:23
-msgid "<app>Orca</app>'s logo"
-msgstr "<app>Orka</app> logó"
-
 #. (itstool) path: page/title
-#: C/index.page:21
+#: C/index.page:22
 msgid "<_:media-1/> <app>Orca</app> Screen Reader"
 msgstr "<_:media-1/> <app>Orka</app> képernyőolvasó"
 
 #. (itstool) path: note/title
-#: C/index.page:28
+#: C/index.page:27
 msgid "Before You Begin"
 msgstr "Mielőtt tovább lépne"
 
 #. (itstool) path: note/p
-#: C/index.page:29
+#: C/index.page:28
 msgid ""
 "If you are not yet familiar with the navigation commands provided by your "
 "desktop environment, you are encouraged to read that documentation first."
@@ -5150,13 +5168,13 @@ msgstr ""
 "erre vonatkozó dokumentációját."
 
 #. (itstool) path: section/title
-#: C/index.page:39
+#: C/index.page:38
 msgid "Reading Documents and Web Pages"
 msgstr "Dokumentumok és weblapok olvasása"
 
 # Megjegyzés: Megváltoztattam az eredeti fordítást, így a főoldalon is jól fog megjelenni
 #. (itstool) path: section/title
-#: C/index.page:45
+#: C/index.page:44
 msgid "Quick Reference"
 msgstr "Rövid referencia"
 
@@ -8519,6 +8537,26 @@ msgstr ""
 "Ha be van jelölve a <gui>Számok kimondása számjegyenként</gui> "
 "jelölőnégyzet, az <app>Orka</app> például az „123” számot különálló "
 "számjegyenként, „1”, „2”, „3” alakban adja át a beszédszintetizátornak."
+
+#~ msgctxt "text"
+#~ msgid "Orca Screen Reader"
+#~ msgstr "Orka képernyőolvasó"
+
+#~ msgctxt "link"
+#~ msgid "Introduction to the <app>Orca</app> Screen Reader"
+#~ msgstr "Az <app>Orka</app> képernyőolvasó bemutatása"
+
+#~ msgid "<app>Orca</app>'s logo"
+#~ msgstr "<app>Orka</app> logó"
+
+#~ msgid ""
+#~ "Next and previous form field: <keyseq><key>Orca Modifier</key><key>Tab</"
+#~ "key></keyseq> and <keyseq><key>Orca Modifier</key><key>Shift</"
+#~ "key><key>Tab</key></keyseq>"
+#~ msgstr ""
+#~ "Ugrás a következő vagy az előző űrlapmezőre: <keyseq><key>Orka módosító</"
+#~ "key><key>Tab</key></keyseq> és <keyseq><key>Orka módosító</"
+#~ "key><key>Shift</key><key>Tab</key></keyseq>"
 
 #~ msgctxt "link"
 #~ msgid "Gecko Navigation"

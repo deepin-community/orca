@@ -18,6 +18,11 @@
 # Free Software Foundation, Inc., Franklin Street, Fifth Floor,
 # Boston MA  02110-1301 USA.
 
+# pylint: disable=wrong-import-position
+# pylint: disable=too-many-return-statements
+# pylint: disable=too-many-branches
+# pylint: disable=too-many-public-methods
+
 """Custom script for LibreOffice."""
 
 __id__        = "$Id$"
@@ -27,201 +32,101 @@ __copyright__ = "Copyright (c) 2005-2009 Sun Microsystems Inc." \
                 "Copyright (c) 2010-2013 The Orca Team."
 __license__   = "LGPL"
 
+import gi
+gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
-import pyatspi
 
-import orca.cmdnames as cmdnames
-import orca.debug as debug
-import orca.scripts.default as default
-import orca.guilabels as guilabels
-import orca.keybindings as keybindings
-import orca.input_event as input_event
-import orca.messages as messages
-import orca.orca as orca
-import orca.orca_state as orca_state
-import orca.speech as speech
-import orca.settings as settings
-import orca.settings_manager as settings_manager
-import orca.structural_navigation as structural_navigation
+from orca import cmdnames
+from orca import debug
+from orca import focus_manager
+from orca import input_event_manager
+from orca.scripts import default
+from orca import guilabels
+from orca import keybindings
+from orca import input_event
+from orca import messages
+from orca import settings_manager
+from orca.ax_object import AXObject
+from orca.ax_table import AXTable
+from orca.ax_text import AXText
+from orca.ax_utilities import AXUtilities
 
 from .braille_generator import BrailleGenerator
-from .formatting import Formatting
 from .script_utilities import Utilities
 from .spellcheck import SpellCheck
 from .speech_generator import SpeechGenerator
 
-_settingsManager = settings_manager.getManager()
 
 class Script(default.Script):
+    """Custom script for LibreOffice."""
 
     def __init__(self, app):
-        """Creates a new script for the given application.
+        super().__init__(app)
 
-        Arguments:
-        - app: the application to create a script for.
-        """
+        self.speak_spreadsheet_coordinates_check_button = None
+        self.always_speak_selected_spreadsheet_range_check_button = None
+        self.skip_blank_cells_check_button = None
+        self.speak_cell_coordinates_check_button = None
+        self.speak_cell_headers_check_button = None
+        self.speak_cell_span_check_button = None
 
-        default.Script.__init__(self, app)
+    def get_braille_generator(self):
+        """Returns the braille generator for this script."""
 
-        self.speakSpreadsheetCoordinatesCheckButton = None
-        self.alwaysSpeakSelectedSpreadsheetRangeCheckButton = None
-        self.skipBlankCellsCheckButton = None
-        self.speakCellCoordinatesCheckButton = None
-        self.speakCellHeadersCheckButton = None
-        self.speakCellSpanCheckButton = None
-
-        # The spreadsheet input line.
-        #
-        self.inputLineForCell = None
-
-        # Dictionaries for the calc and writer dynamic row and column headers.
-        #
-        self.dynamicColumnHeaders = {}
-        self.dynamicRowHeaders = {}
-
-    def getBrailleGenerator(self):
-        """Returns the braille generator for this script.
-        """
         return BrailleGenerator(self)
 
-    def getSpeechGenerator(self):
-        """Returns the speech generator for this script.
-        """
+    def get_speech_generator(self):
+        """Returns the speech generator for this script."""
+
         return SpeechGenerator(self)
 
-    def getSpellCheck(self):
+    def get_spellcheck(self):
         """Returns the spellcheck for this script."""
 
         return SpellCheck(self)
 
-    def getFormatting(self):
-        """Returns the formatting strings for this script."""
-        return Formatting(self)
-
-    def getUtilities(self):
-        """Returns the utilites for this script."""
+    def get_utilities(self):
+        """Returns the utilities for this script."""
 
         return Utilities(self)
 
-    def getStructuralNavigation(self):
-        """Returns the 'structural navigation' class for this script.
-        """
-        types = self.getEnabledStructuralNavigationTypes()
-        return structural_navigation.StructuralNavigation(self, types, enabled=False)
+    def setup_input_event_handlers(self):
+        """Defines the input event handlers for this script."""
 
-    def getEnabledStructuralNavigationTypes(self):
-        """Returns a list of the structural navigation object types
-        enabled in this script.
-        """
-
-        enabledTypes = [structural_navigation.StructuralNavigation.TABLE_CELL]
-
-        return enabledTypes
-
-    def setupInputEventHandlers(self):
-        """Defines InputEventHandler fields for this script that can be
-        called by the key and braille bindings. In this particular case,
-        we just want to be able to add a handler to return the contents of
-        the input line.
-        """
-
-        default.Script.setupInputEventHandlers(self)
-        self.inputEventHandlers.update(
-            self.structuralNavigation.inputEventHandlers)
-
-        self.inputEventHandlers["presentInputLineHandler"] = \
+        default.Script.setup_input_event_handlers(self)
+        self.input_event_handlers["presentInputLineHandler"] = \
             input_event.InputEventHandler(
-                Script.presentInputLine,
+                Script.present_input_line,
                 cmdnames.PRESENT_INPUT_LINE)
 
-        self.inputEventHandlers["setDynamicColumnHeadersHandler"] = \
+        self.input_event_handlers["panBrailleLeftHandler"] = \
             input_event.InputEventHandler(
-                Script.setDynamicColumnHeaders,
-                cmdnames.DYNAMIC_COLUMN_HEADER_SET)
-
-        self.inputEventHandlers["clearDynamicColumnHeadersHandler"] = \
-            input_event.InputEventHandler(
-                Script.clearDynamicColumnHeaders,
-                cmdnames.DYNAMIC_COLUMN_HEADER_CLEAR)
-
-        self.inputEventHandlers["setDynamicRowHeadersHandler"] = \
-            input_event.InputEventHandler(
-                Script.setDynamicRowHeaders,
-                cmdnames.DYNAMIC_ROW_HEADER_SET)
-
-        self.inputEventHandlers["clearDynamicRowHeadersHandler"] = \
-            input_event.InputEventHandler(
-                Script.clearDynamicRowHeaders,
-                cmdnames.DYNAMIC_ROW_HEADER_CLEAR)
-
-        self.inputEventHandlers["panBrailleLeftHandler"] = \
-            input_event.InputEventHandler(
-                Script.panBrailleLeft,
+                Script.pan_braille_left,
                 cmdnames.PAN_BRAILLE_LEFT,
                 False) # Do not enable learn mode for this action
 
-        self.inputEventHandlers["panBrailleRightHandler"] = \
+        self.input_event_handlers["panBrailleRightHandler"] = \
             input_event.InputEventHandler(
-                Script.panBrailleRight,
+                Script.pan_braille_right,
                 cmdnames.PAN_BRAILLE_RIGHT,
                 False) # Do not enable learn mode for this action
 
-        self.inputEventHandlers["whereAmISelectionHandler"] = \
-            input_event.InputEventHandler(
-                Script.whereAmISelection,
-                cmdnames.WHERE_AM_I_SELECTION)
-
-    def getAppKeyBindings(self):
+    def get_app_key_bindings(self):
         """Returns the application-specific keybindings for this script."""
 
-        keyBindings = keybindings.KeyBindings()
+        bindings = keybindings.KeyBindings()
 
-        keyBindings.add(
+        bindings.add(
             keybindings.KeyBinding(
                 "a",
-                keybindings.defaultModifierMask,
+                keybindings.DEFAULT_MODIFIER_MASK,
                 keybindings.ORCA_MODIFIER_MASK,
-                self.inputEventHandlers["presentInputLineHandler"]))
+                self.input_event_handlers["presentInputLineHandler"]))
 
-        keyBindings.add(
-            keybindings.KeyBinding(
-                "r",
-                keybindings.defaultModifierMask,
-                keybindings.ORCA_MODIFIER_MASK,
-                self.inputEventHandlers["setDynamicColumnHeadersHandler"],
-                1))
 
-        keyBindings.add(
-            keybindings.KeyBinding(
-                "r",
-                keybindings.defaultModifierMask,
-                keybindings.ORCA_MODIFIER_MASK,
-                self.inputEventHandlers["clearDynamicColumnHeadersHandler"],
-                2))
+        return bindings
 
-        keyBindings.add(
-            keybindings.KeyBinding(
-                "c",
-                keybindings.defaultModifierMask,
-                keybindings.ORCA_MODIFIER_MASK,
-                self.inputEventHandlers["setDynamicRowHeadersHandler"],
-                1))
-
-        keyBindings.add(
-            keybindings.KeyBinding(
-                "c",
-                keybindings.defaultModifierMask,
-                keybindings.ORCA_MODIFIER_MASK,
-                self.inputEventHandlers["clearDynamicRowHeadersHandler"],
-                2))
-
-        bindings = self.structuralNavigation.keyBindings
-        for keyBinding in bindings.keyBindings:
-            keyBindings.add(keyBinding)
-
-        return keyBindings
-
-    def getAppPreferencesGUI(self):
+    def get_app_preferences_gui(self):
         """Return a GtkGrid containing the application unique configuration
         GUI items for the current application."""
 
@@ -229,446 +134,294 @@ class Script(default.Script):
         grid.set_border_width(12)
 
         label = guilabels.SPREADSHEET_SPEAK_CELL_COORDINATES
-        value = _settingsManager.getSetting('speakSpreadsheetCoordinates')
-        self.speakSpreadsheetCoordinatesCheckButton = \
+        value = settings_manager.get_manager().get_setting("speakSpreadsheetCoordinates")
+        self.speak_spreadsheet_coordinates_check_button = \
             Gtk.CheckButton.new_with_mnemonic(label)
-        self.speakSpreadsheetCoordinatesCheckButton.set_active(value)
-        grid.attach(self.speakSpreadsheetCoordinatesCheckButton, 0, 0, 1, 1)
+        self.speak_spreadsheet_coordinates_check_button.set_active(value)
+        grid.attach(self.speak_spreadsheet_coordinates_check_button, 0, 0, 1, 1)
 
         label = guilabels.SPREADSHEET_SPEAK_SELECTED_RANGE
-        value = _settingsManager.getSetting('alwaysSpeakSelectedSpreadsheetRange')
-        self.alwaysSpeakSelectedSpreadsheetRangeCheckButton = \
+        value = settings_manager.get_manager().get_setting("alwaysSpeakSelectedSpreadsheetRange")
+        self.always_speak_selected_spreadsheet_range_check_button = \
             Gtk.CheckButton.new_with_mnemonic(label)
-        self.alwaysSpeakSelectedSpreadsheetRangeCheckButton.set_active(value)
-        grid.attach(self.alwaysSpeakSelectedSpreadsheetRangeCheckButton, 0, 1, 1, 1)
+        self.always_speak_selected_spreadsheet_range_check_button.set_active(value)
+        grid.attach(self.always_speak_selected_spreadsheet_range_check_button, 0, 1, 1, 1)
 
-        tableFrame = Gtk.Frame()
-        grid.attach(tableFrame, 0, 2, 1, 1)
+        table_frame = Gtk.Frame()
+        grid.attach(table_frame, 0, 2, 1, 1)
 
-        label = Gtk.Label(label="<b>%s</b>" % guilabels.TABLE_NAVIGATION)
+        label = Gtk.Label(label=f"<b>{guilabels.TABLE_NAVIGATION}</b>")
         label.set_use_markup(True)
-        tableFrame.set_label_widget(label)
+        table_frame.set_label_widget(label)
 
-        tableAlignment = Gtk.Alignment.new(0.5, 0.5, 1, 1)
-        tableAlignment.set_padding(0, 0, 12, 0)
-        tableFrame.add(tableAlignment)
-        tableGrid = Gtk.Grid()
-        tableAlignment.add(tableGrid)
+        table_alignment = Gtk.Alignment.new(0.5, 0.5, 1, 1)
+        table_alignment.set_padding(0, 0, 12, 0)
+        table_frame.add(table_alignment)
+        table_grid = Gtk.Grid()
+        table_alignment.add(table_grid)
 
         label = guilabels.TABLE_SPEAK_CELL_COORDINATES
-        value = _settingsManager.getSetting('speakCellCoordinates')
-        self.speakCellCoordinatesCheckButton = \
+        value = settings_manager.get_manager().get_setting("speakCellCoordinates")
+        self.speak_cell_coordinates_check_button = \
             Gtk.CheckButton.new_with_mnemonic(label)
-        self.speakCellCoordinatesCheckButton.set_active(value)
-        tableGrid.attach(self.speakCellCoordinatesCheckButton, 0, 0, 1, 1)
+        self.speak_cell_coordinates_check_button.set_active(value)
+        table_grid.attach(self.speak_cell_coordinates_check_button, 0, 0, 1, 1)
 
         label = guilabels.TABLE_SPEAK_CELL_SPANS
-        value = _settingsManager.getSetting('speakCellSpan')
-        self.speakCellSpanCheckButton = \
+        value = settings_manager.get_manager().get_setting("speakCellSpan")
+        self.speak_cell_span_check_button = \
             Gtk.CheckButton.new_with_mnemonic(label)
-        self.speakCellSpanCheckButton.set_active(value)
-        tableGrid.attach(self.speakCellSpanCheckButton, 0, 1, 1, 1)
+        self.speak_cell_span_check_button.set_active(value)
+        table_grid.attach(self.speak_cell_span_check_button, 0, 1, 1, 1)
 
         label = guilabels.TABLE_ANNOUNCE_CELL_HEADER
-        value = _settingsManager.getSetting('speakCellHeaders')
-        self.speakCellHeadersCheckButton = \
+        value = settings_manager.get_manager().get_setting("speakCellHeaders")
+        self.speak_cell_headers_check_button = \
             Gtk.CheckButton.new_with_mnemonic(label)
-        self.speakCellHeadersCheckButton.set_active(value)
-        tableGrid.attach(self.speakCellHeadersCheckButton, 0, 2, 1, 1)
+        self.speak_cell_headers_check_button.set_active(value)
+        table_grid.attach(self.speak_cell_headers_check_button, 0, 2, 1, 1)
 
         label = guilabels.TABLE_SKIP_BLANK_CELLS
-        value = _settingsManager.getSetting('skipBlankCells')
-        self.skipBlankCellsCheckButton = \
+        value = settings_manager.get_manager().get_setting("skipBlankCells")
+        self.skip_blank_cells_check_button = \
             Gtk.CheckButton.new_with_mnemonic(label)
-        self.skipBlankCellsCheckButton.set_active(value)
-        tableGrid.attach(self.skipBlankCellsCheckButton, 0, 3, 1, 1)
+        self.skip_blank_cells_check_button.set_active(value)
+        table_grid.attach(self.skip_blank_cells_check_button, 0, 3, 1, 1)
 
-        spellcheck = self.spellcheck.getAppPreferencesGUI()
+        spellcheck = self.spellcheck.get_app_preferences_gui()
         grid.attach(spellcheck, 0, len(grid.get_children()), 1, 1)
         grid.show_all()
 
         return grid
 
-    def getPreferencesFromGUI(self):
+    def get_preferences_from_gui(self):
         """Returns a dictionary with the app-specific preferences."""
 
         prefs = {
-            'speakCellSpan': self.speakCellSpanCheckButton.get_active(),
-            'speakCellHeaders': self.speakCellHeadersCheckButton.get_active(),
-            'skipBlankCells': self.skipBlankCellsCheckButton.get_active(),
-            'speakCellCoordinates': self.speakCellCoordinatesCheckButton.get_active(),
-            'speakSpreadsheetCoordinates': self.speakSpreadsheetCoordinatesCheckButton.get_active(),
-            'alwaysSpeakSelectedSpreadsheetRange': self.alwaysSpeakSelectedSpreadsheetRangeCheckButton.get_active(),
+            'speakCellSpan':
+                self.speak_cell_span_check_button.get_active(),
+            'speakCellHeaders':
+                self.speak_cell_headers_check_button.get_active(),
+            'skipBlankCells':
+                self.skip_blank_cells_check_button.get_active(),
+            'speakCellCoordinates':
+                self.speak_cell_coordinates_check_button.get_active(),
+            'speakSpreadsheetCoordinates':
+                self.speak_spreadsheet_coordinates_check_button.get_active(),
+            'alwaysSpeakSelectedSpreadsheetRange':
+                self.always_speak_selected_spreadsheet_range_check_button.get_active(),
         }
 
-        prefs.update(self.spellcheck.getPreferencesFromGUI())
+        prefs.update(self.spellcheck.get_preferences_from_gui())
         return prefs
 
-    def presentObject(self, obj, **args):
-        if not self._lastCommandWasStructNav:
-            super().presentObject(obj, **args)
-            return
+    def pan_braille_left(self, event=None, pan_amount=0):
+        """In document content, we want to use the panning keys to browse the entire document."""
 
-        utterances = self.speechGenerator.generateSpeech(obj, **args)
-        speech.speak(utterances)
-
-    def panBrailleLeft(self, inputEvent=None, panAmount=0):
-        """In document content, we want to use the panning keys to browse the
-        entire document.
-        """
-
-        if self.flatReviewContext \
+        focus = focus_manager.get_manager().get_locus_of_focus()
+        if self.get_flat_review_presenter().is_active() \
            or not self.isBrailleBeginningShowing() \
-           or self.utilities.isSpreadSheetCell(orca_state.locusOfFocus) \
-           or not self.utilities.isTextArea(orca_state.locusOfFocus):
-            return default.Script.panBrailleLeft(self, inputEvent, panAmount)
+           or self.utilities.isSpreadSheetCell(focus) \
+           or not self.utilities.isTextArea(focus):
+            return super().pan_braille_left(event, pan_amount)
 
-        text = orca_state.locusOfFocus.queryText()
-        string, startOffset, endOffset = text.getTextAtOffset(
-            text.caretOffset, pyatspi.TEXT_BOUNDARY_LINE_START)
-        if 0 < startOffset:
-            text.setCaretOffset(startOffset-1)
+        start_offset = AXText.get_line_at_offset(focus)[1]
+        if 0 < start_offset:
+            AXText.set_caret_offset(focus, start_offset - 1)
             return True
 
-        obj = self.utilities.findPreviousObject(orca_state.locusOfFocus)
-        try:
-            text = obj.queryText()
-        except:
-            pass
-        else:
-            orca.setLocusOfFocus(None, obj, notifyScript=False)
-            text.setCaretOffset(text.characterCount)
+        obj = self.utilities.findPreviousObject(focus)
+        if obj is not None:
+            focus_manager.get_manager().set_locus_of_focus(None, obj, notify_script=False)
+            AXText.set_caret_offset_to_end(obj)
             return True
 
-        return default.Script.panBrailleLeft(self, inputEvent, panAmount)
+        return super().pan_braille_left(event, pan_amount)
 
-    def panBrailleRight(self, inputEvent=None, panAmount=0):
-        """In document content, we want to use the panning keys to browse the
-        entire document.
-        """
+    def pan_braille_right(self, event=None, pan_amount=0):
+        """In document content, we want to use the panning keys to browse the entire document."""
 
-        if self.flatReviewContext \
+        focus = focus_manager.get_manager().get_locus_of_focus()
+        if self.get_flat_review_presenter().is_active() \
            or not self.isBrailleEndShowing() \
-           or self.utilities.isSpreadSheetCell(orca_state.locusOfFocus) \
-           or not self.utilities.isTextArea(orca_state.locusOfFocus):
-            return default.Script.panBrailleRight(self, inputEvent, panAmount)
+           or self.utilities.isSpreadSheetCell(focus) \
+           or not self.utilities.isTextArea(focus):
+            return super().pan_braille_right(event, pan_amount)
 
-        text = orca_state.locusOfFocus.queryText()
-        string, startOffset, endOffset = text.getTextAtOffset(
-            text.caretOffset, pyatspi.TEXT_BOUNDARY_LINE_START)
-        if endOffset < text.characterCount:
-            text.setCaretOffset(endOffset)
+        end_offset = AXText.get_line_at_offset(focus)[2]
+        if end_offset < AXText.get_character_count(focus):
+            AXText.set_caret_offset(focus, end_offset)
             return True
 
-        obj = self.utilities.findNextObject(orca_state.locusOfFocus)
-        try:
-            text = obj.queryText()
-        except:
-            pass
-        else:
-            orca.setLocusOfFocus(None, obj, notifyScript=False)
-            text.setCaretOffset(0)
+        obj = self.utilities.findNextObject(focus)
+        if obj is not None:
+            focus_manager.get_manager().set_locus_of_focus(None, obj, notify_script=False)
+            AXText.set_caret_offset_to_start(obj)
             return True
 
-        return default.Script.panBrailleRight(self, inputEvent, panAmount)
+        return super().pan_braille_right(event, pan_amount)
 
-    def presentInputLine(self, inputEvent):
-        """Presents the contents of the spread sheet input line (assuming we
-        have a handle to it - generated when we first focus on a spread
-        sheet table cell.
+    def present_input_line(self, _event):
+        """Presents the contents of the input line for the current cell."""
 
-        This will be either the contents of the table cell that has focus
-        or the formula associated with it.
+        focus = focus_manager.get_manager().get_locus_of_focus()
+        if not self.utilities.isSpreadSheetCell(focus):
+            self.presentMessage(messages.SPREADSHEET_NOT_IN_A)
+            return True
 
-        Arguments:
-        - inputEvent: if not None, the input event that caused this action.
-        """
-
-        if not self.utilities.isSpreadSheetCell(orca_state.locusOfFocus):
-            return
-
-        inputLine = self.utilities.locateInputLine(orca_state.locusOfFocus)
-        if not inputLine:
-            return
-
-        text = self.utilities.displayedText(inputLine)
+        text = AXTable.get_cell_formula(focus)
         if not text:
-            text = messages.EMPTY
+            text = AXText.get_all_text(focus) or messages.EMPTY
 
         self.presentMessage(text)
-
-    def setDynamicColumnHeaders(self, inputEvent):
-        """Set the row for the dynamic header columns to use when speaking
-        calc cell entries. In order to set the row, the user should first set
-        focus to the row that they wish to define and then press Insert-r.
-
-        Once the user has defined the row, it will be used to first speak
-        this header when moving between columns.
-
-        Arguments:
-        - inputEvent: if not None, the input event that caused this action.
-        """
-
-        cell = orca_state.locusOfFocus
-        if cell and cell.parent.getRole() == pyatspi.ROLE_TABLE_CELL:
-            cell = cell.parent
-
-        row, column, table = self.utilities.getRowColumnAndTable(cell)
-        if table:
-            self.dynamicColumnHeaders[hash(table)] = row
-            self.presentMessage(messages.DYNAMIC_COLUMN_HEADER_SET % (row+1))
-
         return True
 
-    def clearDynamicColumnHeaders(self, inputEvent):
-        """Clear the dynamic header column.
+    def locus_of_focus_changed(self, event, old_focus, new_focus):
+        """Called when the visual object with focus changes."""
 
-        Arguments:
-        - inputEvent: if not None, the input event that caused this action.
-        """
-
-        cell = orca_state.locusOfFocus
-        if cell and cell.parent.getRole() == pyatspi.ROLE_TABLE_CELL:
-            cell = cell.parent
-
-        row, column, table = self.utilities.getRowColumnAndTable(cell)
-        try:
-            del self.dynamicColumnHeaders[hash(table)]
-            self.presentationInterrupt()
-            self.presentMessage(messages.DYNAMIC_COLUMN_HEADER_CLEARED)
-        except:
-            pass
-
-        return True
-
-    def setDynamicRowHeaders(self, inputEvent):
-        """Set the column for the dynamic header rows to use when speaking
-        calc cell entries. In order to set the column, the user should first
-        set focus to the column that they wish to define and then press
-        Insert-c.
-
-        Once the user has defined the column, it will be used to first speak
-        this header when moving between rows.
-
-        Arguments:
-        - inputEvent: if not None, the input event that caused this action.
-        """
-
-        cell = orca_state.locusOfFocus
-        if cell and cell.parent.getRole() == pyatspi.ROLE_TABLE_CELL:
-            cell = cell.parent
-
-        row, column, table = self.utilities.getRowColumnAndTable(cell)
-        if table:
-            self.dynamicRowHeaders[hash(table)] = column
-            self.presentMessage(
-                messages.DYNAMIC_ROW_HEADER_SET % self.utilities.columnConvert(column+1))
-
-        return True
-
-    def clearDynamicRowHeaders(self, inputEvent):
-        """Clear the dynamic row headers.
-
-        Arguments:
-        - inputEvent: if not None, the input event that caused this action.
-        """
-
-        cell = orca_state.locusOfFocus
-        if cell and cell.parent.getRole() == pyatspi.ROLE_TABLE_CELL:
-            cell = cell.parent
-
-        row, column, table = self.utilities.getRowColumnAndTable(cell)
-        try:
-            del self.dynamicRowHeaders[hash(table)]
-            self.presentationInterrupt()
-            self.presentMessage(messages.DYNAMIC_ROW_HEADER_CLEARED)
-        except:
-            pass
-
-        return True
-
-    def locusOfFocusChanged(self, event, oldLocusOfFocus, newLocusOfFocus):
-        """Called when the visual object with focus changes.
-
-        Arguments:
-        - event: if not None, the Event that caused the change
-        - oldLocusOfFocus: Accessible that is the old locus of focus
-        - newLocusOfFocus: Accessible that is the new locus of focus
-        """
-
-        # Check to see if this is this is for the find command. See
-        # comment #18 of bug #354463.
-        #
-        if self.findCommandRun and \
+        # Check to see if this is this is for the find command. See comment #18 of bug #354463.
+        if self.run_find_command and \
            event.type.startswith("object:state-changed:focused"):
-            self.findCommandRun = False
-            self.find()
+            self.run_find_command = False
+            self.get_flat_review_finder().find(self)
             return
 
-        if self.flatReviewContext:
-            self.toggleFlatReviewMode()
+        if self.get_flat_review_presenter().is_active():
+            self.get_flat_review_presenter().quit()
 
-        if self.spellcheck.isSuggestionsItem(newLocusOfFocus) \
-           and not self.spellcheck.isSuggestionsItem(oldLocusOfFocus):
-            orca.emitRegionChanged(newFocus)
-            self.updateBraille(newLocusOfFocus)
-            self.spellcheck.presentSuggestionListItem(includeLabel=True)
+        if self.spellcheck.is_suggestions_item(new_focus) \
+           and not self.spellcheck.is_suggestions_item(old_focus):
+            self.update_braille(new_focus)
+            self.spellcheck.present_suggestion_list_item(include_label=True)
             return
-
-        # TODO - JD: Sad hack that wouldn't be needed if LO were fixed.
-        # If we are in the slide presentation scroll pane, also announce
-        # the current page tab. See bug #538056 for more details.
-        #
-        rolesList = [pyatspi.ROLE_SCROLL_PANE,
-                     pyatspi.ROLE_PANEL,
-                     pyatspi.ROLE_PANEL,
-                     pyatspi.ROLE_ROOT_PANE,
-                     pyatspi.ROLE_FRAME,
-                     pyatspi.ROLE_APPLICATION]
-        if self.utilities.hasMatchingHierarchy(newLocusOfFocus, rolesList):
-            for child in newLocusOfFocus.parent:
-                if child.getRole() == pyatspi.ROLE_PAGE_TAB_LIST:
-                    for tab in child:
-                        eventState = tab.getState()
-                        if eventState.contains(pyatspi.STATE_SELECTED):
-                            utterances = \
-                                self.speechGenerator.generateSpeech(tab)
-                            speech.speak(utterances)
 
         # TODO - JD: This is a hack that needs to be done better. For now it
         # fixes the broken echo previous word on Return.
-        elif newLocusOfFocus and oldLocusOfFocus \
-           and newLocusOfFocus.getRole() == pyatspi.ROLE_PARAGRAPH \
-           and oldLocusOfFocus.getRole() == pyatspi.ROLE_PARAGRAPH \
-           and newLocusOfFocus != oldLocusOfFocus:
-            lastKey, mods = self.utilities.lastKeyAndModifiers()
-            if lastKey == "Return" and _settingsManager.getSetting('enableEchoByWord'):
-                self.echoPreviousWord(oldLocusOfFocus)
+        if new_focus != old_focus \
+             and AXUtilities.is_paragraph(new_focus) and AXUtilities.is_paragraph(old_focus):
+            if input_event_manager.get_manager().last_event_was_return() \
+               and settings_manager.get_manager().get_setting("enableEchoByWord"):
+                self.echoPreviousWord(old_focus)
                 return
 
             # TODO - JD: And this hack is another one that needs to be done better.
             # But this will get us to speak the entire paragraph when navigation by
             # paragraph has occurred.
-            event_string, mods = self.utilities.lastKeyAndModifiers()
-            isControlKey = mods & keybindings.CTRL_MODIFIER_MASK
-            isShiftKey = mods & keybindings.SHIFT_MODIFIER_MASK
-            if event_string in ["Up", "Down"] and isControlKey and not isShiftKey:
-                if self.utilities.displayedText(newLocusOfFocus):
-                    speech.speak(self.utilities.displayedText(newLocusOfFocus))
-                    self.updateBraille(newLocusOfFocus)
-                    try:
-                        text = newLocusOfFocus.queryText()
-                    except:
-                        pass
-                    else:
-                        self._saveLastCursorPosition(newLocusOfFocus, text.caretOffset)
+            if input_event_manager.get_manager().last_event_was_paragraph_navigation():
+                string = AXText.get_all_text(new_focus)
+                if string:
+                    voice = self.speech_generator.voice(obj=new_focus, string=string)
+                    self.speakMessage(string, voice=voice)
+                    self.update_braille(new_focus)
+                    offset = AXText.get_caret_offset(new_focus)
+                    self._saveLastCursorPosition(new_focus,offset)
                     return
 
         # Pass the event onto the parent class to be handled in the default way.
-        default.Script.locusOfFocusChanged(self, event,
-                                           oldLocusOfFocus, newLocusOfFocus)
-        if not newLocusOfFocus:
-            return
+        super().locus_of_focus_changed(event, old_focus, new_focus)
 
-        cell = None
-        if self.utilities.isTextDocumentCell(newLocusOfFocus):
-            cell = newLocusOfFocus
-        elif self.utilities.isTextDocumentCell(newLocusOfFocus.parent):
-            cell = newLocusOfFocus.parent
-        if cell:
-            row, column = self.utilities.coordinatesForCell(cell)
-            self.pointOfReference['lastRow'] = row
-            self.pointOfReference['lastColumn'] = column
-
-    def onNameChanged(self, event):
-        """Called whenever a property on an object changes.
-
-        Arguments:
-        - event: the Event
-        """
-
-        if self.spellcheck.isCheckWindow(event.source):
-            return
-
-        # Impress slide navigation.
-        #
-        if self.utilities.isInImpress(event.source) \
-           and self.utilities.isDrawingView(event.source):
-            title, position, count = \
-                self.utilities.slideTitleAndPosition(event.source)
-            if title:
-                title += "."
-
-            msg = messages.PRESENTATION_SLIDE_POSITION % \
-                    {"position" : position, "count" : count}
-            msg = self.utilities.appendString(title, msg)
-            self.presentMessage(msg)
-
-        default.Script.onNameChanged(self, event)
-
-    def onActiveChanged(self, event):
+    def on_active_changed(self, event):
         """Callback for object:state-changed:active accessibility events."""
 
-        if not event.source.parent:
+        if not AXObject.get_parent(event.source):
             msg = "SOFFICE: Event source lacks parent"
-            debug.println(debug.LEVEL_INFO, msg, True)
+            debug.print_message(debug.LEVEL_INFO, msg, True)
             return
 
         # Prevent this events from activating the find operation.
         # See comment #18 of bug #354463.
-        if self.findCommandRun:
-            return
- 
-        default.Script.onActiveChanged(self, event)
-
-    def onActiveDescendantChanged(self, event):
-        """Called when an object who manages its own descendants detects a
-        change in one of its children.
-
-        Arguments:
-        - event: the Event
-        """
-
-        if self.utilities.isSameObject(event.any_data, orca_state.locusOfFocus):
+        if self.run_find_command:
             return
 
-        if event.source == self.spellcheck.getSuggestionsList():
-            if event.source.getState().contains(pyatspi.STATE_FOCUSED):
-                orca.setLocusOfFocus(event, event.any_data, False)
-                self.updateBraille(orca_state.locusOfFocus)
-                self.spellcheck.presentSuggestionListItem()
+        super().on_active_changed(event)
+
+    def on_active_descendant_changed(self, event):
+        """Callback for object:state-changed:active accessibility events."""
+
+        manager = focus_manager.get_manager()
+        focus = manager.get_locus_of_focus()
+        if event.any_data == focus:
+            return
+
+        if event.source == self.spellcheck.get_suggestions_list():
+            if AXUtilities.is_focused(event.source):
+                focus_manager.get_manager().set_locus_of_focus(event, event.any_data, False)
+                self.update_braille(event.any_data)
+                self.spellcheck.present_suggestion_list_item()
             else:
-                self.spellcheck.presentErrorDetails()
+                self.spellcheck.present_error_details()
             return
 
         if self.utilities.isSpreadSheetCell(event.any_data) \
-           and not event.any_data.getState().contains(pyatspi.STATE_FOCUSED) \
-           and not event.source.getState().contains(pyatspi.STATE_FOCUSED) :
+           and not AXUtilities.is_focused(event.any_data) \
+           and not AXUtilities.is_focused(event.source) :
             msg = "SOFFICE: Neither source nor child have focused state. Clearing cache on table."
-            debug.println(debug.LEVEL_INFO, msg, True)
-            event.source.clearCache()
+            AXObject.clear_cache(event.source, False, msg)
 
-        default.Script.onActiveDescendantChanged(self, event)
+        if event.source != focus and not AXObject.find_ancestor(focus, lambda x: x == event.source):
+            msg = "SOFFICE: Working around LO bug 161444."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            # If we immediately set focus to the table, the lack of common ancestor will result in
+            # the ancestry up to the frame being spoken.
+            manager.set_locus_of_focus(None, AXObject.get_parent(event.source), False)
+            # Now setting focus to the table should cause us to present it. Then we can handle the
+            # presentation of the actual event we're processing without too much chattiness.
+            manager.set_locus_of_focus(event, event.source)
 
-    def onChildrenAdded(self, event):
+        super().on_active_descendant_changed(event)
+
+    def on_caret_moved(self, event):
+        """Callback for object:text-caret-moved accessibility events."""
+
+        if event.detail1 == -1:
+            return
+
+        if AXUtilities.is_paragraph(event.source) and not AXUtilities.is_focused(event.source):
+            # TODO - JD: Can we remove this?
+            AXObject.clear_cache(event.source,
+                                 False,
+                                 "Caret-moved event from object which lacks focused state.")
+            if AXUtilities.is_focused(event.source):
+                msg = "SOFFICE: Clearing cache was needed due to missing state-changed event."
+                debug.print_message(debug.LEVEL_INFO, msg, True)
+
+        if self.utilities.flows_from_or_to_selection(event.source):
+            return
+
+        if self.get_table_navigator().last_input_event_was_navigation_command():
+            msg = "SOFFICE: Event ignored: Last input event was table navigation."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return
+
+        if self.utilities.isSpreadSheetCell(focus_manager.get_manager().get_locus_of_focus()):
+            if not self.utilities.is_cell_being_edited(event.source):
+                msg = "SOFFICE: Event ignored: Source is not cell being edited."
+                debug.print_message(debug.LEVEL_INFO, msg, True)
+                return
+
+        super().on_caret_moved(event)
+
+    def on_children_added(self, event):
         """Callback for object:children-changed:add accessibility events."""
 
         if self.utilities.isSpreadSheetCell(event.any_data):
-            orca.setLocusOfFocus(event, event.any_data)
+            focus_manager.get_manager().set_locus_of_focus(event, event.any_data)
             return
 
-        if self.utilities.isLastCell(event.any_data):
-            activeRow = self.pointOfReference.get('lastRow', -1)
-            activeCol = self.pointOfReference.get('lastColumn', -1)
-            if activeRow < 0 or activeCol < 0:
+        AXUtilities.clear_all_cache_now(event.source, "children-changed event.")
+
+        if AXTable.is_last_cell(event.any_data):
+            active_row = self.point_of_reference.get("lastRow", -1)
+            active_col = self.point_of_reference.get("lastColumn", -1)
+            if active_row < 0 or active_col < 0:
                 return
 
-            if self.utilities.isDead(orca_state.locusOfFocus):
-                orca.setLocusOfFocus(event, event.source, False)
+            if focus_manager.get_manager().focus_is_dead():
+                focus_manager.get_manager().set_locus_of_focus(event, event.source, False)
 
             self.utilities.handleUndoTextEvent(event)
-            rowCount, colCount = self.utilities.rowAndColumnCount(event.source)
-            if activeRow == rowCount:
+            row_count = AXTable.get_row_count(event.source)
+            if active_row == row_count:
                 full = messages.TABLE_ROW_DELETED_FROM_END
                 brief = messages.TABLE_ROW_DELETED
             else:
@@ -677,308 +430,129 @@ class Script(default.Script):
             self.presentMessage(full, brief)
             return
 
-        default.Script.onChildrenAdded(self, event)
+        super().on_children_added(event)
 
-    def onFocus(self, event):
-        """Callback for focus: accessibility events."""
-
-        # NOTE: This event type is deprecated and Orca should no longer use it.
-        # This callback remains just to handle bugs in applications and toolkits
-        # during the remainder of the unstable (3.11) development cycle.
-
-        if self.utilities.isSameObject(orca_state.locusOfFocus, event.source):
-            return
-
-        if self.utilities.isFocusableLabel(event.source):
-            orca.setLocusOfFocus(event, event.source)
-            return
-
-        role = event.source.getRole()
-
-        if self.utilities.isZombie(event.source) \
-           or role in [pyatspi.ROLE_TEXT, pyatspi.ROLE_LIST]:
-            comboBox = self.utilities.containingComboBox(event.source)
-            if comboBox:
-                orca.setLocusOfFocus(event, comboBox, True)
-                return
-
-        # This seems to be something we inherit from Gtk+
-        if role in [pyatspi.ROLE_TEXT, pyatspi.ROLE_PASSWORD_TEXT]:
-            orca.setLocusOfFocus(event, event.source)
-            return
-
-        # Ditto.
-        if role == pyatspi.ROLE_PUSH_BUTTON:
-            orca.setLocusOfFocus(event, event.source)
-            return
-
-        # Ditto.
-        if role == pyatspi.ROLE_TOGGLE_BUTTON:
-            orca.setLocusOfFocus(event, event.source)
-            return
-
-        # Ditto.
-        if role == pyatspi.ROLE_COMBO_BOX:
-            orca.setLocusOfFocus(event, event.source)
-            return
-
-        # Ditto.
-        if role == pyatspi.ROLE_PANEL and event.source.name:
-            orca.setLocusOfFocus(event, event.source)
-            return
-
-    def onFocusedChanged(self, event):
+    def on_focused_changed(self, event):
         """Callback for object:state-changed:focused accessibility events."""
-
-        if self._inSayAll:
-            return
-
-        if self._lastCommandWasStructNav:
-            return
 
         if not event.detail1:
             return
 
-        if self.utilities.isAnInputLine(event.source):
-            msg = "SOFFICE: Event ignored: spam from inputLine"
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return
-        if event.source.childCount and self.utilities.isAnInputLine(event.source[0]):
-            msg = "SOFFICE: Event ignored: spam from inputLine parent"
-            debug.println(debug.LEVEL_INFO, msg, True)
+        if self._inSayAll:
             return
 
-        role = event.source.getRole()
-        if role in [pyatspi.ROLE_TEXT, pyatspi.ROLE_LIST]:
-            comboBox = self.utilities.containingComboBox(event.source)
-            if comboBox:
-                orca.setLocusOfFocus(event, comboBox, True)
+        manager = focus_manager.get_manager()
+        focus = manager.get_locus_of_focus()
+        if AXUtilities.is_root_pane(event.source) and AXObject.is_ancestor(focus, event.source):
+            msg = "SOFFICE: Event ignored: Source is root pane ancestor of current focus."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return
+
+        if self.get_table_navigator().last_input_event_was_navigation_command():
+            msg = "SOFFICE: Event ignored: Last input event was table navigation."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+
+        if AXUtilities.is_text(event.source) or AXUtilities.is_list(event.source):
+            combobox = AXObject.find_ancestor(event.source, AXUtilities.is_combo_box)
+            if combobox:
+                focus_manager.get_manager().set_locus_of_focus(event, combobox, True)
                 return
 
-        parent = event.source.parent
-        if parent and parent.getRole() == pyatspi.ROLE_TOOL_BAR:
-            default.Script.onFocusedChanged(self, event)
+        # TODO - JD: Is this still needed?
+        if self.utilities.flows_from_or_to_selection(event.source):
             return
 
-        # TODO - JD: Verify this is still needed
-        ignoreRoles = [pyatspi.ROLE_FILLER, pyatspi.ROLE_PANEL]
-        if role in ignoreRoles:
-            return
-
-        # We will present this when the selection changes.
-        if role == pyatspi.ROLE_MENU:
-            return
-
-        if self.utilities._flowsFromOrToSelection(event.source):
-            return
-
-        if role == pyatspi.ROLE_PARAGRAPH:
-            obj, offset = self.pointOfReference.get("lastCursorPosition", (None, -1))
-            start, end, string = self.utilities.getCachedTextSelection(obj)
+        if AXUtilities.is_paragraph(event.source):
+            obj, _offset = self.point_of_reference.get("lastCursorPosition", (None, -1))
+            _string, start, end = AXText.get_cached_selected_text(obj)
             if start != end:
                 return
 
-            keyString, mods = self.utilities.lastKeyAndModifiers()
-            if keyString in ["Left", "Right"]:
-                orca.setLocusOfFocus(event, event.source, False)
+            manager = input_event_manager.get_manager()
+            if manager.last_event_was_left() or manager.last_event_was_right():
+                focus_manager.get_manager().set_locus_of_focus(event, event.source, False)
                 return
-
-        if self.utilities.isSpreadSheetTable(event.source) and orca_state.locusOfFocus:
-            if self.utilities.isDead(orca_state.locusOfFocus):
-                msg = "SOFFICE: Event believed to be post-editing focus claim. Dead locusOfFocus."
-                debug.println(debug.LEVEL_INFO, msg, True)
-                orca.setLocusOfFocus(event, event.source, False)
-                return
-
-            if  orca_state.locusOfFocus.getRole() in [pyatspi.ROLE_PARAGRAPH, pyatspi.ROLE_TABLE_CELL]:
-                msg = "SOFFICE: Event believed to be post-editing focus claim based on role."
-                debug.println(debug.LEVEL_INFO, msg, True)
-                orca.setLocusOfFocus(event, event.source, False)
-                return
-
-        default.Script.onFocusedChanged(self, event)
-
-    def onCaretMoved(self, event):
-        """Callback for object:text-caret-moved accessibility events."""
-
-        if event.detail1 == -1:
-            return
-
-        if event.source.getRole() == pyatspi.ROLE_PARAGRAPH \
-           and not event.source.getState().contains(pyatspi.STATE_FOCUSED):
-            event.source.clearCache()
-            if event.source.getState().contains(pyatspi.STATE_FOCUSED):
-                msg = "SOFFICE: Clearing cache was needed due to missing state-changed event."
-                debug.println(debug.LEVEL_INFO, msg, True)
-
-        if self.utilities._flowsFromOrToSelection(event.source):
-           return
-
-        if self._lastCommandWasStructNav:
-            return
-
-        if self.utilities.isSpreadSheetCell(orca_state.locusOfFocus):
-            msg = "SOFFICE: locusOfFocus %s is spreadsheet cell" % orca_state.locusOfFocus
-            debug.println(debug.LEVEL_INFO, msg, True)
-
-            if not self.utilities.isCellBeingEdited(event.source):
-                msg = "SOFFICE: Event ignored: Source is not cell being edited."
-                debug.println(debug.LEVEL_INFO, msg, True)
-                return
-
-        super().onCaretMoved(event)
-
-    def onCheckedChanged(self, event):
-        """Callback for object:state-changed:checked accessibility events."""
-
-        obj = event.source
-        role = obj.getRole()
-        parentRole = obj.parent.getRole()
-        if not role in [pyatspi.ROLE_TOGGLE_BUTTON, pyatspi.ROLE_PUSH_BUTTON] \
-           or not parentRole == pyatspi.ROLE_TOOL_BAR:
-            default.Script.onCheckedChanged(self, event)
-            return
- 
-        sourceWindow = self.utilities.topLevelObject(obj)
-        focusWindow = self.utilities.topLevelObject(orca_state.locusOfFocus)
-        if sourceWindow != focusWindow:
-            return
-
-        # Announce when the toolbar buttons are toggled if we just toggled
-        # them; not if we navigated to some text.
-        weToggledIt = False
-        if isinstance(orca_state.lastInputEvent, input_event.MouseButtonEvent):
-            x = orca_state.lastInputEvent.x
-            y = orca_state.lastInputEvent.y
-            weToggledIt = obj.queryComponent().contains(x, y, 0)
-        elif obj.getState().contains(pyatspi.STATE_FOCUSED):
-            weToggledIt = True
-        else:
-            keyString, mods = self.utilities.lastKeyAndModifiers()
-            navKeys = ["Up", "Down", "Left", "Right", "Page_Up", "Page_Down",
-                       "Home", "End", "N"]
-            wasCommand = mods & keybindings.COMMAND_MODIFIER_MASK
-            weToggledIt = wasCommand and keyString not in navKeys
-        if weToggledIt:
-            speech.speak(self.speechGenerator.generateSpeech(obj))
-
-    def onSelectedChanged(self, event):
-        """Callback for object:state-changed:selected accessibility events."""
-
-        full, brief = "", ""
-        if self.utilities.isSelectedTextDeletionEvent(event):
-            msg = "SOFFICE: Change is believed to be due to deleting selected text"
-            debug.println(debug.LEVEL_INFO, msg, True)
-            full = messages.SELECTION_DELETED
-        elif self.utilities.isSelectedTextRestoredEvent(event):
-            msg = "SOFFICE: Selection is believed to be due to restoring selected text"
-            debug.println(debug.LEVEL_INFO, msg, True)
-            if self.utilities.handleUndoTextEvent(event):
-                full = messages.SELECTION_RESTORED
-
-        if full or brief:
-            self.presentMessage(full, brief)
-            self.utilities.updateCachedTextSelection(event.source)
-            return
-
-        super().onSelectedChanged(event)
-
-    def onSelectionChanged(self, event):
-        """Callback for object:selection-changed accessibility events."""
 
         if self.utilities.isSpreadSheetTable(event.source):
-            if _settingsManager.getSetting('onlySpeakDisplayedText'):
+            if focus_manager.get_manager().focus_is_dead():
+                msg = "SOFFICE: Event believed to be post-editing focus claim."
+                debug.print_message(debug.LEVEL_INFO, msg, True)
+                focus_manager.get_manager().set_locus_of_focus(event, event.source, False)
                 return
-            if _settingsManager.getSetting('alwaysSpeakSelectedSpreadsheetRange'):
+
+            if AXUtilities.is_paragraph(focus) or AXUtilities.is_table_cell(focus):
+                if AXObject.find_ancestor(focus, lambda x: x == event.source):
+                    msg = "SOFFICE: Event believed to be post-editing focus claim based on role."
+                    debug.print_message(debug.LEVEL_INFO, msg, True)
+                    focus_manager.get_manager().set_locus_of_focus(event, event.source, False)
+                    return
+
+                # If we were in a cell, and a different table is claiming focus, it's likely that
+                # the current sheet has just changed. There will not be a common ancestor between
+                # the old cell and the table and we'll wind up re-announcing the frame. To prevent
+                # that, set the focus to the parent of the sheet before the default script causes
+                # the table to be presented.
+                manager.set_locus_of_focus(None, AXObject.get_parent(event.source), False)
+
+        super().on_focused_changed(event)
+
+    def on_selected_changed(self, event):
+        """Callback for object:state-changed:selected accessibility events."""
+
+        # https://bugs.documentfoundation.org/show_bug.cgi?id=163801
+        if AXUtilities.is_paragraph(event.source):
+            msg = "SOFFICE: Ignoring event on unsupported role."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return
+
+        super().on_selected_changed(event)
+
+    def on_selection_changed(self, event):
+        """Callback for object:selection-changed accessibility events."""
+
+        # https://bugs.documentfoundation.org/show_bug.cgi?id=163801
+        if AXUtilities.is_paragraph(event.source):
+            msg = "SOFFICE: Ignoring event on unsupported role."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return
+
+        if self.utilities.isSpreadSheetTable(event.source):
+            if settings_manager.get_manager().get_setting("onlySpeakDisplayedText"):
+                return
+            if settings_manager.get_manager().get_setting("alwaysSpeakSelectedSpreadsheetRange"):
                 self.utilities.speakSelectedCellRange(event.source)
                 return
-            if self.utilities.handleRowAndColumnSelectionChange(event.source):
+            if self.utilities.handle_row_and_column_selection_change(event.source):
                 return
-            self.utilities.handleCellSelectionChange(event.source)
+            self.utilities.handle_cell_selection_change(event.source)
             return
 
-        if not self.utilities.isComboBoxSelectionChange(event):
-            super().onSelectionChanged(event)
+        if event.source == self.spellcheck.get_suggestions_list():
+            if focus_manager.get_manager().focus_is_active_window():
+                msg = "SOFFICE: Not presenting because locusOfFocus is window"
+                debug.print_message(debug.LEVEL_INFO, msg, True)
+            elif AXUtilities.is_focused(event.source):
+                focus_manager.get_manager().set_locus_of_focus(event, event.any_data, False)
+                self.update_braille(event.any_data)
+                self.spellcheck.present_suggestion_list_item()
+            else:
+                self.spellcheck.present_error_details()
             return
 
-        selectedChildren = self.utilities.selectedChildren(event.source)
-        if len(selectedChildren) == 1 \
-           and self.utilities.containingComboBox(event.source) == \
-               self.utilities.containingComboBox(orca_state.locusOfFocus):
-            orca.setLocusOfFocus(event, selectedChildren[0], True)
+        super().on_selection_changed(event)
 
-    def onTextSelectionChanged(self, event):
-        """Callback for object:text-selection-changed accessibility events."""
-
-        if self.utilities.isComboBoxNoise(event):
-            msg = "SOFFICE: Event is believed to be combo box noise"
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return
-
-        if self.utilities.isDead(event.source):
-            msg = "SOFFICE: Ignoring event from dead source."
-            debug.println(debug.LEVEL_INFO, msg, True)
-            return
-
-        if event.source != orca_state.locusOfFocus \
-           and event.source.getState().contains(pyatspi.STATE_FOCUSED):
-            orca.setLocusOfFocus(event, event.source, False)
-
-        super().onTextSelectionChanged(event)
-
-    def getTextLineAtCaret(self, obj, offset=None, startOffset=None, endOffset=None):
-        """To-be-removed. Returns the string, caretOffset, startOffset."""
-
-        if obj.parent.getRole() == pyatspi.ROLE_COMBO_BOX:
-            try:
-                text = obj.queryText()
-            except NotImplementedError:
-                return ["", 0, 0]
-
-            if text.caretOffset < 0:
-                [lineString, startOffset, endOffset] = text.getTextAtOffset(
-                    0, pyatspi.TEXT_BOUNDARY_LINE_START)
-
-                # Sometimes we get the trailing line-feed -- remove it
-                #
-                if lineString[-1:] == "\n":
-                    lineString = lineString[:-1]
-
-                return [lineString, 0, startOffset]
-
-        textLine = super().getTextLineAtCaret(obj, offset, startOffset, endOffset)
-        if not obj.getState().contains(pyatspi.STATE_FOCUSED):
-            textLine[0] = self.utilities.displayedText(obj)
-
-        return textLine
-
-    def onWindowActivated(self, event):
+    def on_window_activated(self, event):
         """Callback for window:activate accessibility events."""
 
-        super().onWindowActivated(event)
-        if not self.spellcheck.isCheckWindow(event.source):
+        super().on_window_activated(event)
+        if not self.spellcheck.is_spell_check_window(event.source):
+            self.spellcheck.deactivate()
             return
 
-        if event.source[0].getRole() == pyatspi.ROLE_DIALOG:
-            orca.setLocusOfFocus(event, event.source[0], False)
+        self.spellcheck.present_error_details()
 
-        self.spellcheck.presentErrorDetails()
-
-    def onWindowDeactivated(self, event):
+    def on_window_deactivated(self, event):
         """Callback for window:deactivate accessibility events."""
 
-        self._lastCommandWasStructNav = False
-
-        super().onWindowDeactivated(event)
+        super().on_window_deactivated(event)
         self.spellcheck.deactivate()
-
-    def whereAmISelection(self, inputEvent=None, obj=None):
-        obj = obj or orca_state.locusOfFocus
-        if not self.utilities.isSpreadSheetCell(obj):
-            if self.utilities.inDocumentContent(obj):
-                # Because for some reason, the document implements the selection
-                # interface as if it were a spreadsheet or listbox. *sigh*
-                return super()._whereAmISelectedText(inputEvent, obj)
-            return super().whereAmISelection(inputEvent, obj)
-
-        return self.utilities.speakSelectedCellRange(self.utilities.getTable(obj))

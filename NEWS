@@ -1,3 +1,1535 @@
+48.1 - 1 May 2025
+
+Web:
+
+* Fix bug causing failure to present suggestions in Google Docs.
+
+* Fix chattiness related to description terms with embedded objects.
+
+* Fix incorrect word presentation when navigating out of an embedded
+  child.
+
+* Fix presentation of value of readonly ARIA spin buttons.
+
+* Chromium: Update heuristic to identify the find-in-page widget.
+
+* Work around Gecko bug causing us to present state page tab names.
+
+* Work around one of Gecko's broken text-insertion events causing
+  double-presentation or lack of presentation in contenteditables
+  and Thunderbird.
+
+General:
+
+* Fix changing shortcuts if the a11y manager is used by at-spi2.
+
+* Fix bug causing ancestor panels/groupings to not be announced.
+
+* Work around GTK failing to set the read-only state on read-only text.
+
+* Fix bug causing flat review to sometimes fail.
+
+* Fix braille sometimes displaying stale information after the focused
+  object changes names.
+
+* Don't try to clean up in response to SIGSEGV.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  ca              Catalan                   Jordi Mas i Hernandez
+  cs              Czech                     Daniel Rusek
+  de              German                    Philipp Kiemle
+  es              Spanish                   Daniel Mustieles
+  eu              Basque                    Asier Saratsua Garmendia
+  id              Indonesian                Andika Triwidada
+  ro              Romanian                  Antonio Marin
+
+=========
+
+48.0 - 17 March 2025
+
+(No updates since the RC release.)
+
+=========
+
+48.rc - 3 March 2025
+
+Web:
+
+* Speak/skip blank lines based on the "speak blank lines" setting.
+
+* Improve presentation with mouse review.
+
+* Improve recovery in response to object destruction in scrollable
+  lists.
+
+* Fix looping/getting stuck in Discord inbox.
+
+LibreOffice:
+
+* Fix non-responsiveness when using flat review in Calc.
+
+* Don't announce "blank" as text for non-text objects.
+
+GNOME Shell:
+
+* Handle/ignore focus claim which was causing speech to be cut off
+  in certain dialogs.
+
+General:
+
+* Fix double-presentation of common ancestor.
+
+* Fix bug causing app-specific voice to not be used.
+
+* Handle event floods from GTK3 text views.
+
+* Fix regression in word echo after whitespace insertion.
+
+* Pass Orca's app id to AT-SPI2.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  bg              Bulgarian                 twlvnn kraftwerk
+  ca              Catalan                   Jordi Mas i Hernandez
+  eu              Basque                    Asier Sarasua Garmendia
+  fa              Persian                   Danial Behzadi
+  fi              Finnish                   Jiri Grönroos
+  fr              French                    Alexandre Franke
+  fr              French                    Irénée THIRION
+  gl              Galician                  Fran Dieguez
+  id              Indonesian                Andika Triwidada
+  ka              Georgian                  Ekaterine Papava
+  lt              Lithuanian                Aurimas Černius
+  ne              Nepali                    Pawan Chitrakar
+  pl              Polish                    Piotr Drąg
+  pt_BR           Brazilian Portuguese      Jhonata Fernandes
+  pt              Portuguese                Hugo Carvalho
+  sv              Swedish                   Anders Jonsson
+  tr              Turkish                   Sabri Ünal
+  uk              Ukrainian                 Yuri Chornoivan
+  zh_CN           Chinese (China)           Luming Zh
+
+=========
+
+48.beta - 5 February 2025
+
+Web:
+
+* Work around Brave popup menu bug which causes Orca to not present
+  selection changes.
+
+* Ignore caret-moved events from children-presentational roles because
+  they cause Orca to incorrectly update the current location.
+
+* Fix ValueError during table navigation.
+
+General:
+
+* Add support for the new "switch" role.
+
+* Refactor, and improve presentation of, KeyboardEvent events.
+
+* When supported by AT-SPI2, use XKB keysyms for grabbing and matching
+  keys.
+
+* Do not shadow function arguments when computing modifier mask for the
+  Orca modifiers.
+
+* Eliminate speaking "not selected" after every GTK4 list item. (Note
+  that this fix also requires a GTK4 update.)
+
+* Prune labels with label-for relation when generating descendants
+  (eliminates some "chattiness").
+
+* Don't treat "space" as a mnemonic; insert pause before speaking
+  mnemonic.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  ru              Russian                   Artur S0
+  sk              Slovak                    Peter Vágner
+
+=========
+
+48.alpha - 5 January 2025
+
+Event Processing:
+
+* Replace flood handling with flood protection to remain responsive when
+  an application emits too many events.
+
+* Switch to a priority queue so that scripts get events in a predictable
+  order and important events get handled first.
+
+* Simplify and centralize logic related to identifying if and how an
+  event should be presented to the user.
+
+Clipboard:
+
+* Use gpaste/klipper if possible to increase likelihood that clipboard
+  event presentation works in Wayland.
+
+* Add new unbound command to present clipboard contents.
+
+Spellcheck:
+
+* Prefer the accessible id over other heuristics when attempting to
+  identify components of a spellcheck dialog.
+
+Web:
+
+* Speak digits for telephone number inputs independent of user setting.
+
+* Fix false positive in which different table cells were treated as the
+  same word.
+
+* Don't speak name of non-focusable section unless we know it's author
+  specified. (Eliminates double-presentation of content in Chromium.)
+
+* Fix double-presentation of contents when using the object navigator.
+
+* Support aria-disabled on grid cells.
+
+* Add handling for the "semantics" MathML element which is not being
+  pruned from the accessibility tree by Chromium.
+
+* Fix bug related to presentation of a character name in MathML.
+
+General:
+
+* Improve reliability and simplify options related to text attribute
+  presentation.
+
+* Don't announce "<VoidSymbol>" as a keybinding (GTK4 exposes that).
+
+* Fix double execution for a newly-bound command.
+
+* Improve presentation when generating descendants of list items.
+
+* Simplify logic related to determining if an object is layout only.
+
+* Ongoing code cleanup, technical-debt elimination, removal of obsolete
+  workarounds for application issues, etc.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  be              Belarusian                Vasil Pupkin
+  bg              Bulgarian                 Alexander Shopov
+  ca              Catalan                   Jordi Mas i Hernandez
+  da              Danish                    Alan Mortensen
+  de              German                    Jürgen Benvenuti
+  en_GB           British English           Andi Chandler
+  es              Spanish                   Daniel
+  eu              Basque                    Asier Sarasua Garmendia
+  fa              Persian                   Danial Behzadi
+  fr              French                    Irénée THIRION
+  gl              Galician                  Fran Dieguez
+  hu              Hungarian                 Attila Hammer
+  id              Indonesian                Andika Triwidada
+  ka              Georgian                  Ekaterine Papava
+  nl              Dutch                     Nathan Follens
+  pl              Polish                    Piotr Drąg
+  pt              Portuguese                Hugo Carvalho
+  ru              Russian                   Artur S0
+  sl              Slovenian                 Martin
+  sr@latin        Serbian (Latin)           Милош Поповић
+  sr              Serbian                   Милош Поповић
+  sv              Swedish                   Anders Jonsson
+  th              Thai                      Aefgh Threenine
+  tr              Turkish                   Emin Tufan Çetin
+  uk              Ukrainian                 Yuri Chornoivan
+  zh_CN           Chinese (China)           Luming Zh
+
+=========
+
+47.2 - 22 November 2024
+
+Web:
+
+* Report "required" and "invalid" state on password input.
+
+* Present ARIA alerts as UI; not a text container.
+
+* Fix regression in presentation of table cell content during word nav.
+
+LibreOffice:
+
+* Ensure we announce Calc sheet changes.
+
+General:
+
+* Multiple "chattiness" fixes.
+
+* Treat GTK4 groupings as panels.
+
+* Fix performance issue determining posinset and setsize in giant sets.
+
+* Try to filter out redundant description-change events
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  fa              Persian                   Danial Behzadi
+  nl              Dutch                     Nathan Follens
+  sr@latin        Serbian (Latin)           Милош Поповић
+  sr              Serbian                   Милош Поповић
+
+=========
+
+47.1 - 25 October 2024
+
+LibreOffice:
+
+* Fix bug causing navigation in Calc sheets to not be presented.
+
+Web:
+
+* Fix presentation of heading role in Google docs.
+
+* Fix bug in presenting link ancestors
+
+* Fix several chattiness issues.
+
+General:
+
+* Fix bug causing Orca's help window to not be displayed.
+
+* Make string-redundancy check slightly more conservative
+  so that descriptions are not incorrectly filtered out.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  ca              Catalan                   Jordi Mas i Hernandez
+  th              Thai                      Aefgh Threenine
+
+=========
+
+47.0 - 17 September 2024
+
+General:
+
+* Fix several regressions in presentation that resulted from the
+  code cleanup work. Thanks to everyone who tested!
+
+* Don't kill braille flash message in default.process_routing_key()
+
+Web:
+
+* Support aria-disabled on gridcell
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  be              Belarusian                Vasil Pupkin
+  bg              Bulgarian                 Alexander Shopov
+  da              Danish                    Alan Mortensen
+  en_GB           British English           Bruce Cowan
+  es              Spanish                   Daniel
+  fa              Persian                   Danial Behzadi
+  fr              French                    Alexandre Franke
+  id              Indonesian                Andika Triwidada
+  pl              Polish                    Piotr Drąg
+  th              Thai                      Aefgh Threenine
+
+=========
+
+47.rc - 2 September 2024
+
+Web:
+
+* Fix double-presenting editable list items in braille.
+
+* Fix regressions in name presentation.
+
+* Improve speech presentation of list items in structural
+  navigation.
+
+General:
+
+* Handle event floods during start up.
+
+* Work around Qt bug causing table cells to not be announced
+  during navigation.
+
+* Fix regression in the presentation of notifications.
+
+* Address several issues related to presentation of sets in UI.
+
+* Eliminate some chattiness from redundant descriptions and
+  ancestors with redundant names.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  ca              Catalan                   Jordi Mas
+  ca              Catalan                   Jordi Mas i Hernandez
+  de              German                    Jürgen Benvenuti
+  eu              Basque                    Asier Sarasua Garmendia
+  fa              Persian                   Danial Behzadi
+  gl              Galician                  Fran Dieguez
+  kk              Kazakh                    Baurzhan Muftakhidinov
+  lt              Lithuanian                Aurimas Černius
+  pt_BR           Brazilian Portuguese      Jhonata Fernandes
+  pt              Portuguese                Hugo Carvalho
+  ro              Romanian                  Daniel Șerbănescu
+  ru              Russian                   Artur S0
+  sv              Swedish                   Anders Jonsson
+  th              Thai                      Aefgh Threenine
+  tr              Turkish                   Emin Tufan Çetin
+  tr              Turkish                   Sabri Ünal
+  uk              Ukrainian                 Yuri Chornoivan
+  zh_CN           Chinese (China)           Luming Zh
+
+=========
+
+47.beta - 19 August 2024
+
+Web:
+
+* Present indentation in non-editable code/pre elements.
+
+* Treat tab lists as lists and tabs as list items to make them reachable
+  via structural navigation.
+
+* Treat toggle buttons as a form control for structural navigation.
+
+* Improve reliability of synthesized clicks.
+
+* Eliminate some chattiness with lists and description terms and values.
+
+* Eliminate some chattiness related to page-load events.
+
+* Reduce verbosity of heading presentation.
+
+* Present object rather than line for focus mode widget navigation.
+
+* Fix SayAll failing when launched from non-text web element.
+
+* Work around https://bugzilla.mozilla.org/show_bug.cgi?id=1882794
+  more reliably in order to be less chatty and less likely to refresh
+  keygrabs unnecessarily.
+
+General:
+
+* Much code cleanup, old-hack removal, and miscellaneous performance
+  improvements.
+
+* Fix Orca dialogs opening in the background.
+
+* Always speak the role if object navigator is active.
+
+* Improve identification of redundant descriptions to eliminate
+  some chattiness.
+
+* Fix bug causing incorrect presentation of content during line
+  navigation.
+
+* Fix bug causing table cell headers to be repeated.
+
+* Include description when generating braille.
+
+* Notification Presenter: Ensure we only create one dialog.
+
+* Fix sentence tracking in the Spiel speechserver.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  el              Greek                     Giannis Antypas
+  fa              Persian                   Danial Behzadi
+  hu              Hungarian                 Attila Hammer
+  ka              Georgian                  Ekaterine Papava
+  ru              Russian                   Artur S0
+  sl              Slovenian                 Martin
+  th              Thai                      Aefgh Threenine
+
+=========
+
+47.alpha - 4 July 2024
+
+Web:
+
+* Convert WebKitGTK support to be based on the web script so that all
+  browsers have the same user interaction, commands, etc. Note that
+  there are several WebKitGTK bugs that must be fixed in order for
+  this to work as expected. In the meantime, users should enable native
+  caret navigation and switch to focus mode when using the arrow keys.
+  Structural navigation should work as expected in browse mode.
+
+* Improve presentation of ARIA live regions.
+
+* Make line presentation in focus mode more consistent with that of
+  browse mode in content-editable content.
+
+* Don't speak description list term and value details if list context is
+  disabled.
+
+* Eliminate unnecessary keygrab refreshes (performance).
+
+* Fix bug causing us to not present a newly-focused link due to user
+  agent event ordering.
+
+LibreOffice:
+
+* Fix several issues related to presentation of application UI.
+
+Thunderbird:
+
+* Work around unexpected re-use of existing accessible objects when a
+  message is deleted from the message list.
+
+* Handle event spam (performance).
+
+General:
+
+* Much code cleanup, performance improvements, removal of obsolete
+  scripts, removal of hacks, etc.
+
+* Create documentation for application developers.
+
+* Stop listening for the "focus:" event which was deprecated over a
+  decade ago, replaced by "object:state-changed:focused".
+
+* Make posinset and setsize attribute retrieval global so they can be
+  used in native applications.
+
+* Prefer the description over unrelated labels for static text in
+  native applications.
+
+* Enable tutorial messages by default, so that the new "help text"
+  messages from applications is automatically presented.
+
+* Make Bypass Mode a toggle, rather than something which applies to
+  only the next keystroke.
+
+* Treat "activate" as a click-like action we should attempt when the
+  user attempts to synthesize a mouse-click on a widget.
+
+* Improve error handling and recovery when mouse review is enabled in
+  Wayland.
+
+* Eliminate chattiness from redundant objects in ancestry.
+
+* Handle issue causing selection changes in collapsed combo boxes to
+  not be presented.
+
+* Improve correctness of presentation of GTK managed-descendant tables.
+
+* Fix orca saying "invalid" for the "editbar" role.
+
+* Improve presentation of spin buttons.
+
+* Improve menu-related and has-popup presentation.
+
+* Fix bug causing press and hold events being treated as a multi-click.
+
+* Persist runtime settings between terminal and terminal app scripts
+  so that the user preferences are applied both in the terminal and
+  in the app UI.
+
+* Present character count rather than string in huge selection changes.
+
+* Don't apply the repeated character count presentation for alphanumeric
+  characters.
+
+* Ensure we say "blank" for an empty line in multiline text fields.
+
+* Fix "task_done() called too many times" error.
+
+* Fix several issues related to Spiel support.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  ca              Catalan                   Jordi Mas i Hernandez
+  cs              Czech                     Daniel Rusek
+  da              Danish                    Alan Mortensen
+  de              German                    Jürgen Benvenuti
+  de              German                    Tim Sabsch
+  en_GB           British English           Andi Chandler
+  es              Spanish                   Daniel Mustieles
+  eu              Basque                    Asier Sarasua Garmendia
+  fa              Persian                   Danial Behzadi
+  fr              French                    Vincent Chatelain
+  gl              Galician                  Fran Dieguez
+  he              Hebrew                    Yaron Shahrabani
+  hu              Hungarian                 Attila Hammer
+  id              Indonesian                Andika Triwidada
+  kab             Kabyle                    Athmane MOKRAOUI
+  ka              Georgian                  Ekaterine Papava
+  lt              Lithuanian                Aurimas Černius
+  lv              Latvian                   Rūdolfs Mazurs
+  pl              Polish                    Piotr Drąg
+  pt_BR           Brazilian Portuguese      Juliano de Souza Camargo
+  pt_BR           Brazilian Portuguese      Leônidas Araújo
+  pt              Portuguese                Hugo Carvalho
+  ru              Russian                   Artur S0
+  sl              Slovenian                 Martin
+  sl              Slovenian                 Matej Urbančič
+  sv              Swedish                   Anders Jonsson
+  tr              Turkish                   Sabri Ünal
+  uk              Ukrainian                 Yuri Chornoivan
+  zh_CN           Chinese (China)           Boyuan Yang
+
+=========
+
+46.2 - 25 June 2024
+
+Updates:
+
+* Web: Eliminate chattiness from page-load events from embedded ads.
+
+* Web: Fix bug causing Orca to not present certain ARIA dialog titles.
+
+* Map xfce4-notifyd to notification-daemon script so that notifications
+  are presented.
+
+* Table Navigator: Ensure we set the caret in Writer tables.
+
+* LibreOffice: Fix presentation of editable combobox value changes.
+
+* General: Fix bug that could cause Orca to not present the new caret
+  location.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  ca              Catalan                   Jordi Mas i Hernandez
+  eu              Basque                    Asier Sarasua Garmendia
+  he              Hebrew                    Yaron Shahrabani
+  id              Indonesian                Andika Triwidada
+  kab             Kabyle                    Athmane MOKRAOUI
+  kab             Kabyle                    Rachida SACI
+  ne              Nepali                    Pawan Chitrakar
+  pt_BR           Brazilian Portuguese      Leônidas Araújo
+  pt              Portuguese                Hugo Carvalho
+  ru              Russian                   Artur S0
+
+=========
+
+46.1 - 1 April 2024
+
+Bug fixes:
+
+* Fix issue causing flat review clicking to fail in some Gtk apps.
+
+* Fix regression in SayAll upon page load.
+
+* Fix presentation of new radio button groups.
+
+* Avoid triggering crash in Pidgin.
+
+* Fix issue in which Orca appeared to hang when where am I was used
+  immediately after page load of a large document.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  da              Danish                    Ask Hjorth Larsen
+  de              German                    Jürgen Benvenuti
+  es              Spanish                   Daniel Mustieles
+  eu              Basque                    Asier Sarasua Garmendia
+  fr              French                    Alexandre Franke
+  kab             Kabyle                    Athmane MOKRAOUI
+  ka              Georgian                  Ekaterine Papava
+  lt              Lithuanian                Aurimas Černius
+  lv              Latvian                   Rūdolfs Mazurs
+  pl              Polish                    Piotr Drąg
+  pt_BR           Brazilian Portuguese      Juliano de Souza Camargo
+  sv              Swedish                   Anders Jonsson
+  zh_CN           Chinese (China)           Boyuan Yang
+
+=========
+
+46.0 - 13 March 2024
+
+Meson:
+
+* Allow building without git executable.
+
+Spiel:
+
+* Fix language and dialect fallback.
+
+* Catch all of Spiel's initialization errors.
+
+* Respect both speech system override, and user preference.
+
+* Avoid shutting Spiel down if still in use.
+
+Key handling:
+
+* Eliminate unnecessary keygrab refreshes in the web script.
+
+* Fix new-keyhandling regression in bypass mode.
+
+Thunderbird:
+
+* Adjust to Thunderbird's new way of doing things when a message
+  is deleted.
+
+General:
+
+* Fix false positive identifying redundant name-change events.
+
+* Fix regressions introduced by the accessible-text code rewrite.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  ca              Catalan                   Jordi Mas
+  en_GB           British English           Andi Chandler
+  gl              Galician                  Fran Dieguez
+  he              Hebrew                    Yaron Shahrabani
+  hu              Hungarian                 Attila Hammer
+  kk              Kazakh                    Baurzhan Muftakhidinov
+  tr              Turkish                   Sabri Ünal
+
+=========
+
+46.beta - 21 February 2024
+
+Of Interest to Distros:
+
+* Orca now uses meson instead of autotools.
+
+* Orca no longer depends on the python3-pyatspi package; it accesses
+  AT-SPI2 directly through gobject introspection.
+
+* Orca now has an optional dependency on the Spiel library. Please
+  see "Experimental Features" in README.md for details.
+
+New and Updated Features:
+
+* Spiel support has been added to Orca. Spiel is a new speech synthesis
+  API that works with eSpeak and Piper, with other synthesizers planned.
+
+Web:
+
+* Handled several issues causing Orca to jump unexpectedly to the top
+  of the page.
+
+* Interrupt speech before presenting new line/location with caret nav.
+  This should improve behavior when arrowing rapidly within content.
+
+* Fix bug causing "\ufffc" to be shown in braille instead of the link.
+
+* Eliminate (nearly all of) our text sanity-checks and hacks that had
+  been in place for Firefox/Gecko bugs. Mozilla fixed those bugs as
+  part of their Cache The World work. This should improve performance.
+
+General:
+
+* Fix bug causing focus to be incorrectly changed when selection is
+  automatically updated in a related tree. This can happen with email
+  applications (e.g. incoming messages).
+
+* Fix bug causing us to skip certain named elements in StackExchange
+  and StackOverflow.
+
+* Fix several terminal-related flat review issues.
+
+* Fix notifications in KDE not being fully presented by Notification
+  Presenter.
+
+* Don't say "Window" when a MATE switcher window first appears.
+
+* Echo sentence after whitespace typed rather than punctuation so the
+  presentation does not get cut off.
+
+* Fix bug causing Orca to speak an object from the wrong window in
+  Mouse Review.
+
+* Listen for and present document:page-changed events.
+
+* Remove logic from the Event Manager that was obsoleted by the ability
+  to obsolete queued events. Make remaining logic more performant.
+
+* Convert Orca from using pyatspi to using AT-SPI2 directly. Much code
+  clean-up was also done in the process.
+
+* Miscellaneous code changes related to becoming more ready for Wayland.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  cs              Czech                     Daniel Rusek
+  eu              Basque                    Asier Sarasua Garmendia
+  fa              Persian                   Danial Behzadi
+  he              Hebrew                    Yaron Shahrabani
+  hu              Hungarian                 Attila Hammer
+  ka              Georgian                  Ekaterine Papava
+  pt_BR           Brazilian Portuguese      Juliano de Souza Camargo
+  ru              Russian                   Artur S0
+  sl              Slovenian                 Matej Urbančič
+  sv              Swedish                   Anders Jonsson
+  tr              Turkish                   Sabri Ünal
+  uk              Ukrainian                 Yuri Chornoivan
+
+=========
+
+46.alpha - 18 January 2024
+
+New and Updated Features:
+
+* The much-requested "sleep mode" has arrived! You can cause Orca to
+  act as if it were not running on an as-needed, per-app basis with
+  Ctrl+Alt+Shift+Q. This makes it much easier to use VMs in which
+  another screen reader is being used as well as self-voicing apps.
+  Orca should remember what apps are currently in sleep mode so it is
+  only necessary to enable it once per app in a given session. Note
+  that Orca does not currently store the setting permanently. This is
+  intentional, and is the same behavior as NVDA, but an option may be
+  created in the future to permanently store the setting.
+
+* Orca now has commands to present information about the system without
+  having to navigate to the bar or widget that displays them:
+    * Present CPU and memory usage (unbound, requires psutil)
+    * Present battery status (unbound, requires psutil)
+
+* Table navigation commands now work everywhere; not just in web
+  browsers and LibreOffice. In addition to the existing commands,
+  the following commands have been added:
+    * Orca+Shift+T: toggle table navigation (it's enabled by default)
+    * Orca+Alt+Shift+Left/Right/Up/Down: move to the final cell in
+      the specified direction.
+
+  In addition, Orca's dynamic header commands from LO should now work
+  everywhere, including Google Docs and other web-based editors. These
+  bindings have changed. The new bindings are:
+    * Orca+Shift+R: Set the cells to be treated as column headers to
+      this row.
+    * Orca+Shift+R double-click: Unset the dynamic column headers row.
+    * Orca+Shift+C: Set the cells to be treated as row headers to this
+      column.
+    * Orca+Shift+C double-click: Unset the dynamic row headers row.
+
+* Orca's outdated tutorial message feature has been removed. In its
+  place is support for customized help messages which application and
+  toolkit developers can provide via ATK/AT-SPI2's new "help text"
+  API. At the present time, we are unaware of any implementations
+  and thus have not enabled these new tutorial messages by default.
+  Developers seeking to test their implementation can enable Orca's
+  presentation of tutorial messages in the Orca Preferences dialog.
+
+* We now always use Atspi's device API for Orca commands. This was
+  initially in place only for Gtk 4 apps, which do not report keystrokes
+  to us for optional construction. Having addressed the majority of
+  issues with this new API, we believe it is ready to be used for all
+  applications and toolkits.
+
+Web and Electron Apps Improvements:
+
+* Include DLs in list navigation and DTs in list item navigation.
+  Also improve presentation of nested lists.
+
+* Improve presentation of VSCode's selection containers.
+
+* Web: Improve performance of navigation to end of document
+
+LibreOffice Bug Fix:
+
+* Ensure the entire word count dialog is presented when the dialog
+  is shown.
+
+General Improvements and Fixes:
+
+* Improve performance by identifying and quickly dismissing obsolete
+  accessible events.
+
+* Improve performance by using AT-SPI2's cache for everything.
+
+* Fix bug causing utterances to be split up unexpectedly
+
+* Announce the has popup state even in non-web contexts.
+
+* Lots of code clean-up and more work to eliminate our dependency
+  on pyatspi.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  ca              Catalan                   Jordi Mas i Hernandez
+  cs              Czech                     Daniel Rusek
+  de              German                    Jürgen Benvenuti
+  de              German                    Philipp Kiemle
+  en_GB           British English           Bruce Cowan
+  eo              Esperanto                 Kristjan SCHMIDT
+  es              Spanish                   Daniel Mustieles
+  eu              Basque                    Asier Sarasua Garmendia
+  fa              Persian                   Danial Behzadi
+  fa              Persian                   Sina Aghighi
+  fi              Finnish                   Jiri Grönroos
+  fr              French                    Guillaume Bernard
+  gl              Galician                  Fran Dieguez
+  he              Hebrew                    Yaron Shahrabani
+  hu              Hungarian                 Attila Hammer
+  id              Indonesian                Andika Triwidada
+  ka              Georgian                  Ekaterine Papava
+  lt              Lithuanian                Aurimas Černius
+  pl              Polish                    Piotr Drąg
+  pt_BR           Brazilian Portuguese      Alex Jr
+  pt              Portuguese                Hugo Carvalho
+  ro              Romanian                  Daniel Șerbănescu
+  ro              Romanian                  Florentina Mușat
+  ru              Russian                   Artur S0
+  ru              Russian                   Artur So
+  ru              Russian                   Sergej A
+  sl              Slovenian                 Matej Urbančič
+  sv              Swedish                   Anders Jonsson
+  tr              Turkish                   Sabri Ünal
+  uk              Ukrainian                 Yuri Chornoivan
+  zh_CN           Chinese (China)           Luming Zh
+
+=========
+
+45.2 - 6 January 2024
+
+Web:
+
+* Fix bug causing us to get stuck in menu bar during caret navigation.
+
+General:
+
+* Dump our cached information in response to children-changed events
+  so that we do not present stale information.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  en_GB           British English           Bruce Cowan
+  fa              Persian                   Sina Aghighi
+  fr              French                    Guillaume Bernard
+  he              Hebrew                    Yaron Shahrabani
+  ka              Georgian                  Ekaterine Papava
+  pt_BR           Brazilian Portuguese      Alex Jr
+  ro              Romanian                  Daniel Șerbănescu
+  tr              Turkish                   Sabri Ünal
+
+=========
+
+45.1 - 6 October 2023
+
+Web:
+
+* Fix regression in bookmark support.
+
+* Fix bug causing Orca to present some custom widgets as an image.
+
+General:
+
+* Fix bug causing Orca to ignore objects that are valid because they
+  had been defunct/invalid before.
+
+* Fix bug causing rewind and fast-forward in SayAll to fail.
+
+* Fix chattiness issue in mate-panel.
+
+* Only examine descriptions by default in isSameObject for Gtk apps
+  for performance reasons.
+
+* Use AXObject.is_dead instead of the script utility for performance
+  reasons.
+
+* Revert "Don't let brlapi crash us". This change was a workaround
+  put in place to give distros enough time to get the fixed brltty,
+  but it had a slight performance impact if braille was enabled but
+  not being used.
+
+* Stop using deprecated Gtk API in the accessible actions menu.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  eo              Esperanto                 Kristjan SCHMIDT
+
+=========
+
+45.0 - 15 September 2023
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  ca              Catalan                   Jordi Mas i Hernandez
+  cs              Czech                     Daniel Rusek
+  da              Danish                    Alan Mortensen
+  id              Indonesian                Andika Triwidada
+  ka              Georgian                  Ekaterine Papava
+  sl              Slovenian                 Matej Urbančič
+  sv              Swedish                   Anders Jonsson
+  zh_CN           Chinese (China)           Boyuan Yang
+
+=========
+
+45.rc - 5 September 2023
+
+Bug Fixes:
+
+* Fix several performance issues
+
+* Fix bug causing utterances to be split up unexpectedly
+
+* Filter out redundant descriptions to reduce chattiness
+
+* Fix tracebacks resulting from hand-editing user-settings.conf
+
+* Fix speech getting cut off when focus changes away from checkable
+  item
+
+* Fix Orca failing to say "command not found" label in gnome-shell's
+  run dialog
+
+* Fix presentation of Qt tree cells with toggle action
+
+* Improve logic when suspending events
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  be              Belarusian                Vasil Pupkin
+  da              Danish                    Alan Mortensen
+  de              German                    Jürgen Benvenuti
+  de              German                    Philipp Kiemle
+  es              Spanish                   Daniel Mustieles
+  fa              Persian                   Danial Behzadi
+  fi              Finnish                   Jiri Grönroos
+  gl              Galician                  Fran Dieguez
+  id              Indonesian                Andika Triwidada
+  kk              Kazakh                    Baurzhan Muftakhidinov
+  lt              Lithuanian                Aurimas Černius
+  pa              Punjabi                   Amn Alam
+  pl              Polish                    Piotr Drąg
+  ru              Russian                   Artur S0
+  ru              Russian                   Sergej A
+  sv              Swedish                   Anders Jonsson
+  tr              Turkish                   Sabri Ünal
+
+=========
+
+45.beta - 14 August 2023
+
+Bug Fixes:
+
+* Use importlib instead of imp. This is needed for Orca to work in
+  Python 3.12
+
+* Fix regression in flat review braille panning
+
+* Fix presentation of Calc selected cells
+
+* Fix the "screen reader on" message getting cut off
+
+* Treat LibreOffice as not supporting AtspiCollection (otherwise it can
+  become non-responsive)
+
+Feature Changes:
+
+* Change the default button in the list-of dialogs from "jump to" to
+  "activate"
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  eu              Basque                    Asier Sarasua Garmendia
+  gl              Galician                  Fran Dieguez
+  hu              Hungarian                 Attila Hammer
+  ka              Georgian                  Ekaterine Papava
+  uk              Ukrainian                 Yuri Chornoivan
+
+=========
+45.alpha - 5 August 2023
+
+NOTE: A beta release will follow in a few days, hopefully including all
+of the translations that are in master but never made it to the gnome-45
+branch.
+
+New and Modified Features:
+
+* Object Navigator: This allows the user to navigate through a hierarchy
+  of UI objects. Bindings:
+  - Ctrl+Orca+Up/Down for navigating between parent/child
+  - Ctrl+Orca+Left/Right for navigating among siblings
+  - Ctrl+Orca+Return for performing a click
+  - Ctrl+Orca+S to toggle the simplification of the object hierarchy
+
+* Flat Review can now by restricted to the current object of interest to
+  eliminate "noise" from irrelevant objects.
+  Binding: Currently unbound
+
+* Flat Review now has a command that displays the entire contents being
+  reviewed in an editable text view, making it easier to copy and paste
+  the contents of terminals, dialogs, etc.
+  Binding: Currently unbound
+
+* Action Presenter: A popup menu for performing accessible actions on an
+  object, such as click, expand/collapse, press. This should make it
+  easier to interact with applications with poor keyboard navigability.
+  Binding: Orca+Shift+A
+
+* The Notification List feature was re-written. It now uses an actual
+  Gtk list rather than an off-screen one. The review announcements now
+  include a timestamp and the dialog allows you to clear the history.
+
+* Preferences Dialog and Shortcuts List are now grouped based on feature,
+  making it far easier to discover and bind/rebind commands of interest.
+
+* The Structural Navigation command to navigate among form fields was
+  remapped from Orca+Tab/Orca+Shift+Tab to F/Shift+F. A new command was
+  also added to navigate among iframes, which is currently unbound.
+
+* Added a command to present the default button. Binding: Orca+E.
+
+* Modify Orca's left-click functionality to prefer actions which are
+  associated with performing a left click (e.g. click, press, jump,
+  open) and only attempt to synthesize a click as a last resort.
+
+Bug Fixes and Other Improvements:
+
+* Added the ability to temporarily suspend registration for accessibility
+  events which can greatly improve performance at times event floods are
+  likely, such as window creation/destruction and activation/deactivation.
+
+* Started preferring AtspiCollection over child iteration to locate
+  descendants in the accessibility tree. The performance improvement can
+  be up to 10 times faster. We will continue making changes in this area
+  between now and the stable release.
+
+* Started relying on speech-dispatcher for character presentation rather
+  than our own character names dictionary, which we were not always using.
+  This should cause Orca to always speak the character name in the same
+  way.
+
+* Interrupt speech conditionally on focus changes. This is needed for
+  Gtk 4 on Wayland because we currently do not get notifications for
+  input events, which had been our most reliable hint to interrupt speech.
+  The heuristics to identify when we should not interrupt speech are
+  still being refined, but hopefully this will make the user experience
+  a bit more tolerable until a solution is agreed upon and implemented.
+  See https://github.com/flatpak/xdg-desktop-portal/issues/1046 for more
+  information.
+
+* A number of improvements to reduce some lagginess and chattiness in
+  certain web apps.
+
+* Added logic to filter out windows which claim to be active but really
+  aren't, including descendants of mutter-x11-frames, the desktop frame
+  of some window environments, and certain Electron apps.
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  en_GB           British English           Bruce Cowan
+  hu              Hungarian                 Attila Hammer
+  it              Italian                   Gianvito Cavasoli
+  ka              Georgian                  Ekaterine Papava
+
+=========
+
+44.1 - 25 May 2023
+
+Web:
+
+* Support aria-disabled on application, tab, group, and focusable
+  separator/splitter
+
+* Fix bug in identification of inline iframes
+
+General:
+
+* Improve performance by checking for duplicate object events
+
+* Filter duplicate events when checking for double presses of the
+  orca modifier
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  it              Italian                   Gianvito Cavasoli
+
+
+44.0 - 24 March 2023
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  da              Danish                    Alan Mortensen
+  fr              French                    Guillaume Bernard
+
+=========
+
+44.rc - 8 March 2023
+
+General:
+
+* Fix double-presentation of indentation information
+
+* Interrupt speech immediately prior to speaking "screen reader off"
+
+* Add command-line Orca modifier documentation
+
+* Fix issue when using the new AT-SPI device API
+
+Web:
+
+* Fix jumping in sites caused by ARIA selection-changed events
+
+* Fix incorrect browsing in Firefox when popup has focus
+
+* Fix double-presentation of content in ARIA's tab role
+
+* Fix structural navigation commands sometimes failing to work after
+  script reactivation
+
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  ab              Abkhazian                 Nart Tlisha
+  de              German                    Jürgen Benvenuti
+  hu              Hungarian                 Attila Hammer
+  id              Indonesian                Kukuh Syafaat
+  ka              Georgian                  Ekaterine Papava
+  sv              Swedish                   Anders Jonsson
+  uk              Ukrainian                 Yuri Chornoivan
+
+=========
+
+43.1 - 3 January 2023
+
+General:
+
+* Clean up and fix bugs in flat review find
+
+* Treat KP_Delete as Delete for the purpose of identifying text deletions
+
+* Fix several issues related to prefering the TableCell interface
+
+* Fix presentation of name-changed events for Qt push buttons
+
+Web:
+
+* Fix repetition of text elements during SayAll in web content
+
+* Fix structural navigation bug impacting columns spanning multiple cells
+
+* Fix chattiness issue with browser page tabs
+
+* Fix bug causing Orca to present a non-active page in Chrome
+
+Mouse Review:
+
+* Do not re-present the whole paragraph when leaving a link
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  ab              Abkhazian                 Nart Tlisha
+  ka              Georgian                  Ekaterine Papava
+  nl              Dutch                     Nathan Follens
+
+=========
+
+43.0 - 23 September 2022
+
+General:
+
+* Prevent double-presentation of notifications
+
+* Fix presentation of Nautilus items for Gtk 4
+
+* Fix bug causing the wrong voice to be used
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  bg              Bulgarian                 Alexander Shopov
+  ca              Catalan                   Jordi Mas
+  da              Danish                    Alan Mortensen
+  fr              French                    Charles Monzat
+  kk              Kazakh                    Baurzhan Muftakhidinov
+  lv              Latvian                   Rūdolfs Mazurs
+  ne              Nepali                    Pawan Chitrakar
+  pt_BR           Brazilian Portuguese      Leônidas Araújo
+  sl              Slovenian                 Matej Urbančič
+  sv              Swedish                   Anders Jonsson
+  tr              Turkish                   Sabri Ünal
+  zh_CN           Chinese (China)           Boyuan Yang
+
+=========
+
+43.beta - 29 August 2022
+
+Web:
+
+* Fix issue causing Orca to remain silent with autofocused inputs
+
+* Prevent structural navigation exiting current modal dialog
+
+* Make cell ancestor presentation optional
+
+General:
+
+* Fix issue causing the description to not be presented
+
+* Fix several popup menu-related issues
+
+* Fix issue causing certain static text in dialogs to not be presented
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  ab              Abkhazian                 Nart Tlisha
+  ca              Catalan                   Jordi Mas
+  cs              Czech                     Marek Černocký
+  de              German                    Jürgen Benvenuti
+  eu              Basque                    Asier Sarasua Garmendia
+  fr              French                    Claude Paroz
+  gl              Galician                  Fran Dieguez
+  hu              Hungarian                 Attila Hammer
+  lt              Lithuanian                Aurimas Černius
+  pl              Polish                    Piotr Drąg
+  sr              Serbian                   Марко Костић
+  tr              Turkish                   Emin Tufan Çetin
+  zh_CN           Chinese (China)           Luming Zh
+
+=========
+
+43.alpha - 1 July 2022
+
+Web:
+
+* Fix several issues relating to presentation of navigation among
+  focusable descendants within ARIA grids and tables
+
+* Improve support for description lists
+
+* Improve presentation of articles in feeds
+
+* Improve presentation of unknown setsize and row/column count
+
+* Fix several "chattiness" issues related to ARIA widgets
+
+* Fix SayAll presentation of time element inside link
+
+* Fix presentation of the FluentUI react dialog (and any other
+  dialog which has an ARIA document-role descendant
+
+* Improve performance in large rich-text editors
+
+* Include focusable elements with clickancestor action in the
+  list of "clickables"
+
+WebKitGtk:
+
+* Fix issue causing WebKitGtk 2.36 content to not be handled by Orca's
+  webkit support
+
+* Fail gracefully when structural navigation commands are used in
+  WebKitGtk 2.36.x (the collection interface won't be supported
+  until 2.26.4)
+
+General:
+
+* Add more event-flood handling to improve performance in general,
+  but especially for gnome-shell
+
+* Fix bug related to which script responded to a mouse-button event
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  bg              Bulgarian                 Alexander Shopov
+  ca              Catalan                   Jordi Mas
+  ca              Catalan                   Jordi Mas i Hernandez
+  cs              Czech                     Marek Černocký
+  da              Danish                    Alan Mortensen
+  da              Danish                    Ask Hjorth Larsen
+  de              German                    Mario Blättermann
+  de              German                    Philipp Kiemle
+  de              German                    Tim Sabsch
+  es              Spanish                   Daniel Mustieles
+  es              Spanish                   Francisco Javier Dorado
+  eu              Basque                    Asier Sarasua Garmendia
+  fa              Persian                   Danial Behzadi
+  fi              Finnish                   Jiri Grönroos
+  fr              French                    Charles Monzat
+  fr              French                    Claude Paroz
+  gl              Galician                  Fran Dieguez
+  he              Hebrew                    Yaron Shahrabani
+  hu              Hungarian                 Attila Hammer
+  id              Indonesian                Kukuh Syafaat
+  it              Italian                   Milo Casagrande
+  kk              Kazakh                    Baurzhan Muftakhidinov
+  lt              Lithuanian                Aurimas Černius
+  lv              Latvian                   Rūdolfs Mazurs
+  nb              Norwegian Bokmål          Kjartan Maraas
+  ne              Nepali                    Pawan Chitrakar
+  nl              Dutch                     Nathan Follens
+  oc              Occitan                   Quentin PAGÈS
+  pl              Polish                    Piotr Drąg
+  pt_BR           Brazilian Portuguese      Leônidas Araújo
+  pt_BR           Brazilian Portuguese      Matheus Barbosa
+  pt_BR           Brazilian Portuguese      Tiago Casal
+  pt              Portuguese                Hugo Carvalho
+  ro              Romanian                  Daniel Șerbănescu
+  ru              Russian                   Aleksandr Melman
+  sl              Slovenian                 Matej Urbančič
+  sr              Serbian                   Марко Костић
+  sv              Swedish                   Anders Jonsson
+  sv              Swedish                   Luna Jernberg
+  tr              Turkish                   Emin Tufan Çetin
+  uk              Ukrainian                 Yuri Chornoivan
+  zh_CN           Chinese (China)           Boyuan Yang
+  zh_CN           Chinese (China)           Luming Zh
+
+=========
+
+42.0 - 22 March 2022
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  de              German                    Philipp Kiemle
+  it              Italian                   Milo Casagrande
+  kk              Kazakh                    Baurzhan Muftakhidinov
+  nb              Norwegian Bokmål          Kjartan Maraas
+
+=========
+
+42.rc - 11 March 2022
+
+Web:
+
+* Improve behavior during event flood of table-related events from
+  web apps
+
+* Fix bug causing us to ignore a newly-loaded document due to it
+  having a bogus index in parent
+
+LibreOffice:
+
+* Fix bug causing lines with embedded objects to not be spoken
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  bg              Bulgarian                 Alexander Shopov
+  ca              Catalan                   Jordi Mas
+  cs              Czech                     Marek Černocký
+  da              Danish                    Alan Mortensen
+  es              Spanish                   Daniel Mustieles
+  eu              Basque                    Asier Sarasua Garmendia
+  fr              French                    Claude Paroz
+  gl              Galician                  Fran Dieguez
+  hu              Hungarian                 Attila Hammer
+  id              Indonesian                Kukuh Syafaat
+  lt              Lithuanian                Aurimas Černius
+  pl              Polish                    Piotr Drąg
+  pt_BR           Brazilian Portuguese      Matheus Barbosa
+  pt              Portuguese                Hugo Carvalho
+  ro              Romanian                  Daniel Șerbănescu
+  ru              Russian                   Aleksandr Melman
+  sl              Slovenian                 Matej Urbančič
+  sr              Serbian                   Марко Костић
+  sv              Swedish                   Luna Jernberg
+  tr              Turkish                   Emin Tufan Çetin
+  uk              Ukrainian                 Yuri Chornoivan
+  zh_CN           Chinese (China)           Luming Zh
+
+=========
+
+42.beta - 15 February 2022
+
+Web:
+
+* Fix several bugs in which we update our location silently when we
+  should instead announce it
+
+* Improve behavior during event flood of text-related events from
+  web apps
+
+* Attempt to work around object destruction during structural nav
+
+* Improve behavior of label ancestors of widgets
+
+General:
+
+* Fix bug causing accessing preferences to fail for esperanto
+
+* Handle apps going defunct during cleanup; more debugging
+
+* Handle exception when object is destroyed while getting text attributes
+
+* Try to handle error from mate-notification-daemon during window:create
+
+* Improve performance in gnome-shell
+
+* Improve presentation of all text becoming unselected during caret
+  navigation
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  bg              Bulgarian                 Alexander Shopov
+  ca              Catalan                   Jordi Mas i Hernandez
+  cs              Czech                     Marek Černocký
+  da              Danish                    Alan Mortensen
+  da              Danish                    Ask Hjorth Larsen
+  de              German                    Mario Blättermann
+  de              German                    Tim Sabsch
+  es              Spanish                   Daniel Mustieles
+  es              Spanish                   Francisco Javier Dorado
+  eu              Basque                    Asier Sarasua Garmendia
+  fi              Finnish                   Jiri Grönroos
+  fr              French                    Charles Monzat
+  gl              Galician                  Fran Dieguez
+  he              Hebrew                    Yaron Shahrabani
+  hu              Hungarian                 Attila Hammer
+  id              Indonesian                Kukuh Syafaat
+  it              Italian                   Milo Casagrande
+  kk              Kazakh                    Baurzhan Muftakhidinov
+  lv              Latvian                   Rūdolfs Mazurs
+  ne              Nepali                    Pawan Chitrakar
+  nl              Dutch                     Nathan Follens
+  oc              Occitan                   Quentin PAGÈS
+  pl              Polish                    Piotr Drąg
+  pt_BR           Brazilian Portuguese      Leônidas Araújo
+  pt_BR           Brazilian Portuguese      Tiago Casal
+  pt              Portuguese                Hugo Carvalho
+  ru              Russian                   Aleksandr Melman
+  sl              Slovenian                 Matej Urbančič
+  sv              Swedish                   Anders Jonsson
+  uk              Ukrainian                 Yuri Chornoivan
+  zh_CN           Chinese (China)           Boyuan Yang
+
+=========
+
+41.1 - 1 December 2021
+
+Web:
+
+* Fix presentation of selected items in datalist
+
+* Fix issue causing non-rendered headings being combined with
+  other, rendered elements when presenting line contents
+
+* Improve behavior when focused back/forward button is pressed
+
+* Improve presentation of subscript and superscript elements
+  (requires implementations exposing the associated AT-SPI2
+  roles)
+
+* Attempt to identify and present custom-element images
+
+* Fix SayAll for rich-text editors
+
+* Treat all list items inside listboxes as focus mode widgets
+  regardless of authoring
+
+* Clear cached objects when not dumping full cache for child change
+  to prevent skipping over newly-added content
+
+* Fix speech generator for browser alerts
+
+* Fix issues causing certain spin buttons to not be presented correctly
+
+General:
+
+* Modify collections module import for Python3.10 compatibility
+
+* Event Manager: Handle name/description change floods
+
+* Adjust string for repeats when presenting text changes
+
+* Clear flat review context when page tab lists emit selection-changed
+  to eliminate stale context (e.g. in a wizard)
+
+* Improve presentation of indeterminate progress bars (busy indicators)
+
+New and updated translations (THANKS EVERYONE!!!):
+
+  es              Spanish                   Daniel Mustieles
+  he              Hebrew                    Yaron Shahrabani
+  lv              Latvian                   Rūdolfs Mazurs
+  ru              Russian                   Aleksandr Melman
+
+=========
+
 41.0 - 16 September 2021
 
 General:

@@ -27,95 +27,29 @@ __copyright__ = "Copyright (c) 2005-2009 Sun Microsystems Inc." \
                 "Copyright (c) 2010-2013 The Orca Team"
 __license__   = "LGPL"
 
-import pyatspi
+import gi
+gi.require_version("Atspi", "2.0")
+from gi.repository import Atspi
 
 from . import cmdnames
 from . import debug
-from . import eventsynthesizer
+from . import focus_manager
 from . import guilabels
 from . import input_event
+from . import input_event_manager
 from . import keybindings
 from . import messages
 from . import object_properties
-from . import orca
 from . import orca_gui_navlist
-from . import orca_state
 from . import settings
 from . import settings_manager
-from . import speech
-
-_settingsManager = settings_manager.getManager()
-#############################################################################
-#                                                                           #
-# MatchCriteria                                                             #
-#                                                                           #
-#############################################################################
-
-class MatchCriteria:
-    """Contains the criteria which will be used to generate a collection
-    matchRule.  We don't want to create the rule until we need it and
-    are ready to use it. In addition, the creation of an AT-SPI match
-    rule requires you specify quite a few things (see the __init__),
-    most of which are irrelevant to the search at hand.  This class
-    makes it possible for the StructuralNavigationObject creator to just
-    specify the few criteria that actually matter.
-    """
-
-    def __init__(self,
-                 collection,
-                 states = [],
-                 matchStates = None,
-                 objAttrs = [],
-                 matchObjAttrs = None,
-                 roles = [],
-                 matchRoles = None,
-                 interfaces = [],
-                 matchInterfaces = None,
-                 invert = False,
-                 applyPredicate = False):
-
-        """Creates a new match criteria object.
-
-        Arguments:
-        - collection: the collection interface for the document in
-          which the accessible objects can be found.
-        - states: a list of pyatspi states of interest
-        - matchStates: whether an object must have all of the states
-          in the states list, any of the states in the list, or none
-          of the states in the list.  Must be one of the collection
-          interface MatchTypes if provided.
-        - objAttrs: a list of object attributes (not text attributes)
-        - matchObjAttrs: whether an object must have all of the
-          attributes in the objAttrs list, any of the attributes in
-          the list, or none of the attributes in the list.  Must be
-          one of the collection interface MatchTypes if provided.
-        - interfaces: (We aren't using this.  According to the at-spi
-          idl, it is a string.)
-        - matchInterfaces: The collection MatchType for matching by
-          interface.
-        - invert: If true the match rule will find objects that don't
-          match. We always use False.
-        - applyPredicate: whether or not a predicate should be applied
-          as an additional check to see if an item is indeed a match.
-          This is necessary, for instance, when one of the things we
-          care about is a text attribute, something the collection
-          interface doesn't include in its criteria.
-        """
-
-        self.collection = collection
-        self.matchStates = matchStates or collection.MATCH_ANY
-        self.objAttrs = objAttrs
-        self.matchObjAttrs = matchObjAttrs or collection.MATCH_ANY
-        self.roles = roles
-        self.matchRoles = matchRoles or collection.MATCH_ANY
-        self.interfaces = interfaces
-        self.matchInterfaces = matchInterfaces or collection.MATCH_ALL
-        self.invert = invert
-        self.applyPredicate = applyPredicate
-
-        self.states = pyatspi.StateSet()
-        for state in states:
-            self.states.add(state)
+from .ax_collection import AXCollection
+from .ax_hypertext import AXHypertext
+from .ax_object import AXObject
+from .ax_selection import AXSelection
+from .ax_table import AXTable
+from .ax_text import AXText
+from .ax_utilities import AXUtilities
 
 ###########################################################################
 #                                                                         #
@@ -130,10 +64,8 @@ class StructuralNavigationObject:
     role and/or a state of interest. Or they may be something more complex
     such as character counts, text attributes, and other object attributes.
     """
-
     def __init__(self, structuralNavigation, objType, bindings, predicate,
-                 criteria, presentation, dialogData):
-
+                 criteria, presentation, dialogData, getter):
         """Creates a new structural navigation object.
 
         Arguments:
@@ -145,34 +77,37 @@ class StructuralNavigationObject:
           binding takes the form of [keysymstring, modifiers, description].
           The goPreviousAtLevel and goNextAtLevel bindings are each a list
           of bindings in that form.
-        - predicate: the predicate to use to determine if a given accessible
-          matches this structural navigation object. Used when a search via
-          collection is not possible or practical.
-        - criteria: a method which returns a MatchCriteria object which
-          can in turn be used to locate the next/previous matching accessible
-          via collection.
+        - predicate: the method to use to verify if a given accessible
+          matches this structural navigation object. Used only when the
+          collection interface does not provide a way for us to specify
+          needed condition(s).
+        - criteria: a method which returns a MatchRule object which is used
+          to find all matching objects via AtspiCollection.
         - presentation: the method which should be called after performing
           the search for the structural navigation object.
         - dialogData: the method which returns the title, column headers,
           and row data which should be included in the "list of" dialog for
           the structural navigation object.
+        - getter: The function which should be used instead of the criteria
+          and predicate.
         """
 
-        self.structuralNavigation = structuralNavigation
+        self.structural_navigation = structuralNavigation
         self.objType = objType
         self.bindings = bindings
         self.predicate = predicate
         self.criteria = criteria
         self.present = presentation
         self._dialogData = dialogData
+        self.getter = getter
 
-        self.inputEventHandlers = {}
-        self.keyBindings = keybindings.KeyBindings()
+        self.input_event_handlers = {}
+        self.key_bindings = keybindings.KeyBindings()
         self.functions = []
         self._setUpHandlersAndBindings()
 
     def _setUpHandlersAndBindings(self):
-        """Adds the inputEventHandlers and keyBindings for this object."""
+        """Adds the.input_event_handlers and keyBindings for this object."""
 
         # Set up the basic handlers.  These are our traditional goPrevious
         # and goNext functions.
@@ -180,48 +115,48 @@ class StructuralNavigationObject:
         previousBinding = self.bindings.get("previous")
         if previousBinding:
             [keysymstring, modifiers, description] = previousBinding
-            handlerName = "%sGoPrevious" % self.objType
-            self.inputEventHandlers[handlerName] = \
+            handlerName = f"{self.objType}GoPrevious"
+            self.input_event_handlers[handlerName] = \
                 input_event.InputEventHandler(self.goPrevious, description)
 
-            self.keyBindings.add(
+            self.key_bindings.add(
                 keybindings.KeyBinding(
                     keysymstring,
-                    keybindings.defaultModifierMask,
+                    keybindings.DEFAULT_MODIFIER_MASK,
                     modifiers,
-                    self.inputEventHandlers[handlerName]))
+                    self.input_event_handlers[handlerName]))
 
             self.functions.append(self.goPrevious)
 
         nextBinding = self.bindings.get("next")
         if nextBinding:
             [keysymstring, modifiers, description] = nextBinding
-            handlerName = "%sGoNext" % self.objType
-            self.inputEventHandlers[handlerName] = \
+            handlerName = f"{self.objType}GoNext"
+            self.input_event_handlers[handlerName] = \
                 input_event.InputEventHandler(self.goNext, description)
 
-            self.keyBindings.add(
+            self.key_bindings.add(
                 keybindings.KeyBinding(
                     keysymstring,
-                    keybindings.defaultModifierMask,
+                    keybindings.DEFAULT_MODIFIER_MASK,
                     modifiers,
-                    self.inputEventHandlers[handlerName]))
+                    self.input_event_handlers[handlerName]))
 
             self.functions.append(self.goNext)
 
         listBinding = self.bindings.get("list")
         if listBinding:
             [keysymstring, modifiers, description] = listBinding
-            handlerName = "%sShowList" % self.objType
-            self.inputEventHandlers[handlerName] = \
+            handlerName = f"{self.objType}ShowList"
+            self.input_event_handlers[handlerName] = \
                 input_event.InputEventHandler(self.showList, description)
 
-            self.keyBindings.add(
+            self.key_bindings.add(
                 keybindings.KeyBinding(
                     keysymstring,
-                    keybindings.defaultModifierMask,
+                    keybindings.DEFAULT_MODIFIER_MASK,
                     modifiers,
-                    self.inputEventHandlers[handlerName]))
+                    self.input_event_handlers[handlerName]))
 
             self.functions.append(self.showList)
 
@@ -235,15 +170,15 @@ class StructuralNavigationObject:
             handlerName = "%sGoPreviousLevel%dHandler" % (self.objType, level)
             keysymstring, modifiers, description = binding
 
-            self.inputEventHandlers[handlerName] = \
+            self.input_event_handlers[handlerName] = \
                 input_event.InputEventHandler(handler, description)
 
-            self.keyBindings.add(
+            self.key_bindings.add(
                 keybindings.KeyBinding(
                     keysymstring,
-                    keybindings.defaultModifierMask,
+                    keybindings.DEFAULT_MODIFIER_MASK,
                     modifiers,
-                    self.inputEventHandlers[handlerName]))
+                    self.input_event_handlers[handlerName]))
 
             self.functions.append(handler)
 
@@ -254,15 +189,15 @@ class StructuralNavigationObject:
             handlerName = "%sGoNextLevel%dHandler" % (self.objType, level)
             keysymstring, modifiers, description = binding
 
-            self.inputEventHandlers[handlerName] = \
+            self.input_event_handlers[handlerName] = \
                 input_event.InputEventHandler(handler, description)
 
-            self.keyBindings.add(
+            self.key_bindings.add(
                 keybindings.KeyBinding(
                     keysymstring,
-                    keybindings.defaultModifierMask,
+                    keybindings.DEFAULT_MODIFIER_MASK,
                     modifiers,
-                    self.inputEventHandlers[handlerName]))
+                    self.input_event_handlers[handlerName]))
 
             self.functions.append(handler)
 
@@ -273,15 +208,15 @@ class StructuralNavigationObject:
             handlerName = "%sShowListAtLevel%dHandler" % (self.objType, level)
             keysymstring, modifiers, description = binding
 
-            self.inputEventHandlers[handlerName] = \
+            self.input_event_handlers[handlerName] = \
                 input_event.InputEventHandler(handler, description)
 
-            self.keyBindings.add(
+            self.key_bindings.add(
                 keybindings.KeyBinding(
                     keysymstring,
-                    keybindings.defaultModifierMask,
+                    keybindings.DEFAULT_MODIFIER_MASK,
                     modifiers,
-                    self.inputEventHandlers[handlerName]))
+                    self.input_event_handlers[handlerName]))
 
             self.functions.append(handler)
 
@@ -305,79 +240,52 @@ class StructuralNavigationObject:
                 continue
 
             handler = self.goDirectionFactory(direction)
-            handlerName = "%sGo%s" % (self.objType, direction)
+            handlerName = f"{self.objType}Go{direction}"
             keysymstring, modifiers, description = binding
 
-            self.inputEventHandlers[handlerName] = \
+            self.input_event_handlers[handlerName] = \
                 input_event.InputEventHandler(handler, description)
 
-            self.keyBindings.add(
+            self.key_bindings.add(
                 keybindings.KeyBinding(
                     keysymstring,
-                    keybindings.defaultModifierMask,
+                    keybindings.DEFAULT_MODIFIER_MASK,
                     modifiers,
-                    self.inputEventHandlers[handlerName]))
+                    self.input_event_handlers[handlerName]))
 
             self.functions.append(handler)
 
-    def addHandlerAndBinding(self, binding, handlerName, function):
-        """Adds a custom inputEventHandler and keybinding to the object's
-        handlers and bindings.  Right now this is unused, but here in
-        case a creator of a StructuralNavigationObject had some other
-        desired functionality in mind.
-
-        Arguments:
-        - binding: [keysymstring, modifiers, description]
-        - handlerName: a string uniquely identifying the handler
-        - function: the function associated with the binding
-        """
-
-        [keysymstring, modifiers, description] = binding
-        handler = input_event.InputEventHandler(function, description)
-        keyBinding = keybindings.KeyBinding(
-                         keysymstring,
-                         keybindings.defaultModifierMask,
-                         modifiers,
-                         handler)
-
-        self.inputEventHandlers[handlerName] = handler
-        self.structuralNavigation.inputEventHandlers[handlerName] = handler
-
-        self.functions.append(function)
-        self.structuralNavigation.functions.append(function)
-
-        self.keyBindings.add(keyBinding)
-        self.structuralNavigation.keyBindings.add(keyBinding)
-
     def goPrevious(self, script, inputEvent):
         """Go to the previous object."""
-        self.structuralNavigation.goObject(self, False)
+        self.structural_navigation.goObject(self, False, inputEvent)
 
     def goNext(self, script, inputEvent):
         """Go to the next object."""
-        self.structuralNavigation.goObject(self, True)
+        self.structural_navigation.goObject(self, True, inputEvent)
 
     def showList(self, script, inputEvent):
         """Show a list of all the items with this object type."""
 
-        try:
-            objects, criteria = self.structuralNavigation._getAll(self)
-        except:
-            script.presentMessage(messages.NAVIGATION_DIALOG_ERROR)
-            return
+        objects = self.structural_navigation._getAll(self)
 
         def _isValidMatch(x):
-            if script.utilities.isDead(x):
+            if AXObject.is_dead(x):
                 return False
-            return not (script.utilities.isHidden(x) or script.utilities.isEmpty(x))
+            return not (script.utilities.isHidden(x) or script.utilities.is_empty(x))
 
         objects = list(filter(_isValidMatch, objects))
-        if criteria.applyPredicate:
+
+        if self.predicate is not None:
             objects = list(filter(self.predicate, objects))
+
+        if self._dialogData is None:
+            msg = "STRUCTURAL NAVIGATION: Cannot show list without dialog data"
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return
 
         title, columnHeaders, rowData = self._dialogData()
         count = len(objects)
-        title = "%s: %s" % (title, messages.itemsFound(count))
+        title = f"{title}: {messages.itemsFound(count)}"
         if not count:
             script.presentMessage(title)
             return
@@ -385,7 +293,7 @@ class StructuralNavigationObject:
         currentObject, offset = script.utilities.getCaretContext()
         try:
             index = objects.index(currentObject)
-        except:
+        except Exception:
             index = 0
 
         rows = [[obj, -1] + rowData(obj) for obj in objects]
@@ -402,7 +310,7 @@ class StructuralNavigationObject:
         """
 
         def goPreviousAtLevel(script, inputEvent):
-            self.structuralNavigation.goObject(self, False, arg=level)
+            self.structural_navigation.goObject(self, False, inputEvent, arg=level)
         return goPreviousAtLevel
 
     def goNextAtLevelFactory(self, level):
@@ -417,7 +325,7 @@ class StructuralNavigationObject:
         """
 
         def goNextAtLevel(script, inputEvent):
-            self.structuralNavigation.goObject(self, True, arg=level)
+            self.structural_navigation.goObject(self, True, inputEvent, arg=level)
         return goNextAtLevel
 
     def showListAtLevelFactory(self, level):
@@ -431,22 +339,18 @@ class StructuralNavigationObject:
         """
 
         def showListAtLevel(script, inputEvent):
-            try:
-                objects, criteria = self.structuralNavigation._getAll(self, arg=level)
-            except:
-                script.presentMessage(messages.NAVIGATION_DIALOG_ERROR)
-                return
+            objects = self.structural_navigation._getAll(self, arg=level)
 
             def _isValidMatch(x):
-                return not (script.utilities.isHidden(x) or script.utilities.isEmpty(x))
+                return not (script.utilities.isHidden(x) or script.utilities.is_empty(x))
 
             objects = list(filter(_isValidMatch, objects))
-            if criteria.applyPredicate:
+            if self.predicate is not None:
                 objects = list(filter(self.predicate, objects))
 
             title, columnHeaders, rowData = self._dialogData(arg=level)
             count = len(objects)
-            title = "%s: %s" % (title, messages.itemsFound(count))
+            title = f"{title}: {messages.itemsFound(count)}"
             if not count:
                 script.presentMessage(title)
                 return
@@ -454,7 +358,7 @@ class StructuralNavigationObject:
             currentObject, offset = script.utilities.getCaretContext()
             try:
                 index = objects.index(currentObject)
-            except:
+            except Exception:
                 index = 0
 
             rows = [[obj, -1] + rowData(obj) for obj in objects]
@@ -463,63 +367,21 @@ class StructuralNavigationObject:
         return showListAtLevel
 
     def goDirectionFactory(self, direction):
-        """Generates the methods for navigation in a particular direction
-        (i.e. left, right, up, down, first, last).  Right now, this is
-        primarily for table cells, but it may have applicability for other
-        objects.  For example, when navigating in an outline, one might
-        want the ability to navigate to the next item at a given level,
-        but then work his/her way up/down in the hierarchy.
-
-        Arguments:
-        - direction: the direction in which to navigate as a string.
-        """
-
-        def goCell(script, inputEvent):
-            obj, offset = script.utilities.getCaretContext()
-            thisCell = self.structuralNavigation.getCellForObj(obj)
-            currentCoordinates = self.structuralNavigation.getCellCoordinates(thisCell, False)
-            if direction == "Left":
-                desiredCoordinates = [currentCoordinates[0],
-                                      currentCoordinates[1] - 1]
-            elif direction == "Right":
-                desiredCoordinates = [currentCoordinates[0],
-                                      currentCoordinates[1] + 1]
-            elif direction == "Up":
-                desiredCoordinates = [currentCoordinates[0] - 1,
-                                      currentCoordinates[1]]
-            elif direction == "Down":
-                desiredCoordinates = [currentCoordinates[0] + 1,
-                                      currentCoordinates[1]]
-            elif direction == "First":
-                desiredCoordinates = [0, 0]
-            else:
-                desiredCoordinates = [-1, -1]
-                table = self.structuralNavigation.getTableForCell(thisCell)
-                if table:
-                    nRows, nColumns = script.utilities.rowAndColumnCount(table, False)
-                    lastRow = nRows - 1
-                    lastCol = nColumns - 1
-                    desiredCoordinates = [lastRow, lastCol]
-            self.structuralNavigation.goCell(self,
-                                             thisCell,
-                                             currentCoordinates,
-                                             desiredCoordinates)
+        """Generates the methods for navigation in a particular direction."""
 
         def goLastLiveRegion(script, inputEvent):
             """Go to the last liveRegion."""
             if settings.inferLiveRegions:
-                script.liveRegionManager.goLastLiveRegion()
+                script.live_region_manager.goLastLiveRegion()
             else:
                 script.presentMessage(messages.LIVE_REGIONS_OFF)
 
         def goContainerEdge(script, inputEvent):
             isStart = direction == "Start"
-            self.structuralNavigation.goEdge(self, isStart)
+            self.structural_navigation.goEdge(self, isStart, inputEvent)
 
         if self.objType == StructuralNavigation.CONTAINER:
             return goContainerEdge
-        if self.objType == StructuralNavigation.TABLE_CELL:
-            return goCell
         elif self.objType == StructuralNavigation.LIVE_REGION \
              and direction == "Last":
             return goLastLiveRegion
@@ -533,7 +395,7 @@ class StructuralNavigationObject:
 class StructuralNavigation:
     """This class implements the structural navigation functionality which
     is available to scripts. Scripts interested in implementing structural
-    navigation need to override getEnabledStructuralNavigationTypes() and
+    navigation need to override get_enabled_structural_navigation_types() and
     return a list of StructuralNavigation object types which should be
     enabled.
     """
@@ -545,7 +407,7 @@ class StructuralNavigation:
     # methods: _fooBindings(), _fooPredicate(), _fooCriteria(), and
     # _fooPresentation(). With these in place, and with the object
     # FOO included among the object types returned by the script's
-    # getEnabledStructuralNavigationTypes(), the StructuralNavigation
+    # get_enabled_structural_navigation_types(), the StructuralNavigation
     # object should be created and set up automagically. At least that
     # is the idea. :-) This hopefully will also enable easy re-definition
     # of existing StructuralNavigationObjects on a script-by-script basis.
@@ -564,6 +426,7 @@ class StructuralNavigation:
     FORM_FIELD      = "formField"
     HEADING         = "heading"
     IMAGE           = "image"
+    IFRAME          = "iframe"
     LANDMARK        = "landmark"
     LINK            = "link"
     LIST            = "list"        # Bulleted/numbered lists
@@ -573,66 +436,47 @@ class StructuralNavigation:
     RADIO_BUTTON    = "radioButton"
     SEPARATOR       = "separator"
     TABLE           = "table"
-    TABLE_CELL      = "tableCell"
     UNVISITED_LINK  = "unvisitedLink"
     VISITED_LINK    = "visitedLink"
-
-    # Roles which are recognized as being a form field. Note that this
-    # is for the purpose of match rules and predicates and refers to
-    # AT-SPI roles. 
-    #
-    FORM_ROLES = [pyatspi.ROLE_CHECK_BOX,
-                  pyatspi.ROLE_RADIO_BUTTON,
-                  pyatspi.ROLE_COMBO_BOX,
-                  pyatspi.ROLE_DOCUMENT_FRAME, # rich text editing
-                  pyatspi.ROLE_LIST_BOX,
-                  pyatspi.ROLE_ENTRY,
-                  pyatspi.ROLE_PASSWORD_TEXT,
-                  pyatspi.ROLE_PUSH_BUTTON,
-                  pyatspi.ROLE_SPIN_BUTTON,
-                  pyatspi.ROLE_TEXT]
 
     # Roles which are recognized as being potential "large objects"
     # or "chunks." Note that this refers to AT-SPI roles.
     #
-    OBJECT_ROLES = [pyatspi.ROLE_HEADING,
-                    pyatspi.ROLE_LIST_ITEM,
-                    pyatspi.ROLE_MATH,
-                    pyatspi.ROLE_PARAGRAPH,
-                    pyatspi.ROLE_STATIC,
-                    pyatspi.ROLE_COLUMN_HEADER,
-                    pyatspi.ROLE_ROW_HEADER,
-                    pyatspi.ROLE_TABLE_CELL,
-                    pyatspi.ROLE_TABLE_ROW,
-                    pyatspi.ROLE_TEXT,
-                    pyatspi.ROLE_SECTION,
-                    pyatspi.ROLE_ARTICLE,
-                    pyatspi.ROLE_DESCRIPTION_TERM,
-                    pyatspi.ROLE_DESCRIPTION_VALUE,
-                    pyatspi.ROLE_DOCUMENT_EMAIL,
-                    pyatspi.ROLE_DOCUMENT_FRAME,
-                    pyatspi.ROLE_DOCUMENT_PRESENTATION,
-                    pyatspi.ROLE_DOCUMENT_SPREADSHEET,
-                    pyatspi.ROLE_DOCUMENT_TEXT,
-                    pyatspi.ROLE_DOCUMENT_WEB]
+    OBJECT_ROLES = [Atspi.Role.HEADING,
+                    Atspi.Role.LIST_ITEM,
+                    Atspi.Role.MATH,
+                    Atspi.Role.PARAGRAPH,
+                    Atspi.Role.STATIC,
+                    Atspi.Role.COLUMN_HEADER,
+                    Atspi.Role.ROW_HEADER,
+                    Atspi.Role.TABLE_CELL,
+                    Atspi.Role.TABLE_ROW,
+                    Atspi.Role.TEXT,
+                    Atspi.Role.SECTION,
+                    Atspi.Role.ARTICLE,
+                    Atspi.Role.DESCRIPTION_TERM,
+                    Atspi.Role.DESCRIPTION_VALUE,
+                    Atspi.Role.DOCUMENT_EMAIL,
+                    Atspi.Role.DOCUMENT_FRAME,
+                    Atspi.Role.DOCUMENT_PRESENTATION,
+                    Atspi.Role.DOCUMENT_SPREADSHEET,
+                    Atspi.Role.DOCUMENT_TEXT,
+                    Atspi.Role.DOCUMENT_WEB]
 
-    CONTAINER_ROLES = [pyatspi.ROLE_BLOCK_QUOTE,
-                       pyatspi.ROLE_DESCRIPTION_LIST,
-                       pyatspi.ROLE_FORM,
-                       pyatspi.ROLE_FOOTER,
-                       pyatspi.ROLE_HEADER,
-                       pyatspi.ROLE_LANDMARK,
-                       pyatspi.ROLE_LOG,
-                       pyatspi.ROLE_LIST,
-                       pyatspi.ROLE_MARQUEE,
-                       pyatspi.ROLE_PANEL,
-                       pyatspi.ROLE_SECTION,
-                       pyatspi.ROLE_TABLE,
-                       pyatspi.ROLE_TREE,
-                       pyatspi.ROLE_TREE_TABLE]
-
-    IMAGE_ROLES = [pyatspi.ROLE_IMAGE,
-                   pyatspi.ROLE_IMAGE_MAP]
+    CONTAINER_ROLES = [Atspi.Role.BLOCK_QUOTE,
+                       Atspi.Role.DESCRIPTION_LIST,
+                       Atspi.Role.FORM,
+                       Atspi.Role.FOOTER,
+                       Atspi.Role.HEADER,
+                       Atspi.Role.LANDMARK,
+                       Atspi.Role.LOG,
+                       Atspi.Role.LIST,
+                       Atspi.Role.MARQUEE,
+                       Atspi.Role.PANEL,
+                       Atspi.Role.SECTION,
+                       Atspi.Role.TABLE,
+                       Atspi.Role.TREE,
+                       Atspi.Role.TREE_TABLE]
 
     def __init__(self, script, enabledTypes, enabled=False):
         """Creates an instance of the StructuralNavigation class.
@@ -651,6 +495,10 @@ class StructuralNavigation:
         self._script = script
         self.enabled = enabled
 
+        # To make it possible for focus mode to suspend this navigation without
+        # changing the user's preferred setting.
+        self._suspended = False
+
         # Create all of the StructuralNavigationObject's in which the
         # script is interested, using the convenience method
         #
@@ -660,9 +508,9 @@ class StructuralNavigation:
                 self.structuralNavigationObjectCreator(objType)
 
         self.functions = []
-        self.inputEventHandlers = {}
-        self.setupInputEventHandlers()
-        self.keyBindings = self.getKeyBindings()
+        self._last_input_event = None
+        self._handlers = self.get_handlers(True)
+        self._bindings = keybindings.KeyBindings()
 
         # When navigating in a non-uniform table, one can move to a
         # cell which spans multiple rows and/or columns.  When moving
@@ -673,6 +521,8 @@ class StructuralNavigation:
         self.lastTableCell = [-1, -1]
 
         self._objectCache = {}
+
+        self._inModalDialog = False
 
     def clearCache(self, document=None):
         if document:
@@ -692,25 +542,36 @@ class StructuralNavigation:
         - name: the name/objType associated with this object.
         """
 
-        # We're going to assume bindings.  After all, a structural
-        # navigation object is by definition an object which one can
-        # navigate to using the associated keybindings. For similar
-        # reasons we'll also assume a predicate and a presentation
-        # method.  (See the Objects section towards the end of this
-        # class for examples of each.)
-        #
-        bindings = eval("self._%sBindings()" % name)
-        criteria = eval("self._%sCriteria" % name)
-        predicate = eval("self._%sPredicate" % name)
-        presentation = eval("self._%sPresentation" % name)
+        # Bindings and presentation are mandatory.
+        bindings = eval(f"self._{name}Bindings()")
+        presentation = eval(f"self._{name}Presentation")
 
+        # Predicates should be the exception; not the rule.
         try:
-            dialogData = eval("self._%sDialogData" % name)
-        except:
+            predicate = eval(f"self._{name}Predicate")
+        except Exception:
+            predicate = None
+
+        # Dialogs are nice, but we shouldn't insist upon them.
+        try:
+            dialogData = eval(f"self._{name}DialogData")
+        except Exception:
             dialogData = None
 
+        # Criteria is the present, but being phased out.
+        try:
+            criteria = eval(f"self._{name}Criteria")
+        except Exception:
+            criteria = None
+
+        # Getters are the future!
+        try:
+            getter = eval(f"self._{name}Getter")
+        except Exception:
+            getter = None
+
         return StructuralNavigationObject(self, name, bindings, predicate,
-                                          criteria, presentation, dialogData)
+                                          criteria, presentation, dialogData, getter)
 
     def addObject(self, objType, structuralNavigationObject):
         """Adds structuralNavigationObject to the dictionary of enabled
@@ -724,52 +585,111 @@ class StructuralNavigation:
 
         self.enabledObjects[objType] = structuralNavigationObject
 
-    def setupInputEventHandlers(self):
-        """Defines InputEventHandler fields for a script."""
+    def get_handlers(self, refresh=False):
+        """Returns the structural navigation input event handlers."""
 
+        if refresh:
+            msg = "STRUCTURAL NAVIGATION: Refreshing handlers."
+            debug.print_message(debug.LEVEL_INFO, msg, True, True)
+            self._setup_handlers()
+
+        return self._handlers
+
+    def _setup_handlers(self):
+        """Sets up the structural navigation input event handlers."""
+
+        self._handlers = {}
+        self.functions = []
         if not len(self.enabledObjects):
             return
 
-        self.inputEventHandlers["toggleStructuralNavigationHandler"] = \
+        self._handlers["toggleStructuralNavigationHandler"] = \
             input_event.InputEventHandler(
                 self.toggleStructuralNavigation,
-                cmdnames.STRUCTURAL_NAVIGATION_TOGGLE)
+                 cmdnames.STRUCTURAL_NAVIGATION_TOGGLE,
+                 enabled = not self._suspended)
 
         for structuralNavigationObject in self.enabledObjects.values():
-            self.inputEventHandlers.update(\
-                structuralNavigationObject.inputEventHandlers)
+            handlers = structuralNavigationObject.input_event_handlers
+            for key in handlers:
+                handlers[key].set_enabled(not self._suspended and self.enabled)
+            self._handlers.update(handlers)
             self.functions.extend(structuralNavigationObject.functions)
 
-    def getKeyBindings(self):
-        """Defines the structural navigation key bindings for a script.
+        msg = f"STRUCTURAL NAVIGATION: Handlers set up. Suspended: {self._suspended}"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
 
-        Returns: an instance of keybindings.KeyBindings.
-        """
+    def get_bindings(self, refresh=False, is_desktop=True):
+        """Returns the structural navigation keybindings."""
 
-        keyBindings = keybindings.KeyBindings()
+        if refresh:
+            msg = "STRUCTURAL NAVIGATION: Refreshing bindings."
+            debug.print_message(debug.LEVEL_INFO, msg, True, True)
+            self._setup_bindings()
+        elif self._bindings.is_empty():
+            self._setup_bindings()
 
+        return self._bindings
+
+    def _setup_bindings(self):
+        """Sets up the structural navigation keybindings."""
+
+        self._bindings = keybindings.KeyBindings()
         if not len(self.enabledObjects):
-            return keyBindings
+            return
 
-        keyBindings.add(
+        self._bindings.add(
             keybindings.KeyBinding(
                 "z",
-                keybindings.defaultModifierMask,
+                keybindings.DEFAULT_MODIFIER_MASK,
                 keybindings.ORCA_MODIFIER_MASK,
-                self.inputEventHandlers["toggleStructuralNavigationHandler"]))
+                self._handlers["toggleStructuralNavigationHandler"],
+                1,
+                not self._suspended))
 
         for structuralNavigationObject in self.enabledObjects.values():
-            bindings = structuralNavigationObject.keyBindings.keyBindings
+            bindings = structuralNavigationObject.key_bindings.key_bindings
             for keybinding in bindings:
-                keyBindings.add(keybinding)
+                keybinding.set_enabled(self.enabled and not self._suspended)
+                self._bindings.add(keybinding)
 
-        return keyBindings
+        # This pulls in the user's overrides to alternative keys.
+        self._bindings = settings_manager.get_manager().override_key_bindings(
+            self._handlers, self._bindings, False)
 
-    #########################################################################
-    #                                                                       #
-    # Input Event Handler Methods                                           #
-    #                                                                       #
-    #########################################################################
+        msg = f"STRUCTURAL NAVIGATION: Bindings set up. Suspended: {self._suspended}"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+
+    def last_input_event_was_navigation_command(self):
+        """Returns true if the last input event was a navigation command."""
+
+        manager = input_event_manager.get_manager()
+        result = manager.last_event_equals_or_is_release_for_event(self._last_input_event)
+        if self._last_input_event is not None:
+            string = self._last_input_event.as_single_line_string()
+        else:
+            string = "None"
+
+        msg = f"STRUCTURAL NAVIGATION: Last navigation event ({string}) is last key event: {result}"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+        return result
+
+    def refresh_bindings_and_grabs(self, script, reason=""):
+        """Refreshes structural navigation bindings and grabs for script."""
+
+        msg = "STRUCTURAL NAVIGATION: Refreshing bindings and grabs"
+        if reason:
+            msg += f": {reason}"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+
+        for binding in self._bindings.key_bindings:
+            script.key_bindings.remove(binding, include_grabs=True)
+
+        self._handlers = self.get_handlers(True)
+        self._bindings = self.get_bindings(True)
+
+        for binding in self._bindings.key_bindings:
+            script.key_bindings.add(binding, include_grabs=not self._suspended)
 
     def toggleStructuralNavigation(self, script, inputEvent, presentMessage=True):
         """Toggles structural navigation keys."""
@@ -781,9 +701,28 @@ class StructuralNavigation:
         else:
             string = messages.STRUCTURAL_NAVIGATION_KEYS_OFF
 
-        debug.println(debug.LEVEL_CONFIGURATION, string)
+        self._handlers = self.get_handlers(True)
+        self._bindings = self.get_bindings(True)
+        self.refresh_bindings_and_grabs(script, "toggling structural navigation")
         if presentMessage:
             self._script.presentMessage(string)
+
+        return True
+
+    def suspend_commands(self, script, suspended, reason=""):
+        """Suspends structural navigation independent of the enabled setting."""
+
+        if suspended == self._suspended:
+            return
+
+        msg = f"STRUCTURAL NAVIGATION: Suspended: {suspended}"
+        if reason:
+            msg += f": {reason}"
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+
+        debug.print_message(debug.LEVEL_INFO, msg, True)
+        self._suspended = suspended
+        self.refresh_bindings_and_grabs(script, f"Suspended changed to {suspended}")
 
     #########################################################################
     #                                                                       #
@@ -791,110 +730,61 @@ class StructuralNavigation:
     #                                                                       #
     #########################################################################
 
-    def goCell(self, structuralNavigationObject, thisCell, 
-               currentCoordinates, desiredCoordinates):
-        """The method used for navigation among cells in a table.
-
-        Arguments:
-        - structuralNavigationObject: the StructuralNavigationObject which
-          represents the table cell.
-        - thisCell: the pyatspi accessible TABLE_CELL we're currently in
-        - currentCoordinates: the [row, column] of thisCell.  Note, we
-          cannot just get the coordinates because in table cells which
-          span multiple rows and/or columns, the value returned by 
-          table.getRowAtIndex() is the first row the cell spans. Likewise,
-          the value returned by table.getColumnAtIndex() is the left-most
-          column.  Therefore, we keep track of the row and column from
-          our perspective to ensure we stay in the correct row and column.
-        - desiredCoordinates: the [row, column] where we think we'd like to
-          be.
-        """
-
-        table = self.getTableForCell(thisCell)
-        if not table:
-            self._script.presentMessage(messages.TABLE_NOT_IN_A)
-            return None
-
-        currentRow, currentCol = currentCoordinates
-        desiredRow, desiredCol = desiredCoordinates
-        rowDiff = desiredRow - currentRow
-        colDiff = desiredCol - currentCol
-
-        nRows, nColumns = self._script.utilities.rowAndColumnCount(table, False)
-        cell = thisCell
-        while cell:
-            cell = self._script.utilities.cellForCoordinates(table, desiredRow, desiredCol)
-            if not cell:
-                if desiredCol < 0:
-                    self._script.presentMessage(messages.TABLE_ROW_BEGINNING)
-                    desiredCol = 0
-                elif desiredCol > nColumns - 1:
-                    self._script.presentMessage(messages.TABLE_ROW_END)
-                    desiredCol = nColumns - 1
-                if desiredRow < 0:
-                    self._script.presentMessage(messages.TABLE_COLUMN_TOP)
-                    desiredRow = 0
-                elif desiredRow > nRows - 1:
-                    self._script.presentMessage(messages.TABLE_COLUMN_BOTTOM)
-                    desiredRow = nRows - 1
-            elif thisCell == cell or (settings.skipBlankCells and self._isBlankCell(cell)):
-                if colDiff < 0:
-                    desiredCol -= 1
-                elif colDiff > 0:
-                    desiredCol += 1
-                if rowDiff < 0:
-                    desiredRow -= 1
-                elif rowDiff > 0:
-                    desiredRow += 1
-                else:
-                    break
-            else:
-                break
-
-        self.lastTableCell = [desiredRow, desiredCol]
-        if cell:
-            oldRowHeaders = self._script.utilities.rowHeadersForCell(thisCell)
-            oldColHeaders = self._script.utilities.columnHeadersForCell(thisCell)
-            arg = [rowDiff, colDiff, oldRowHeaders, oldColHeaders]
-            structuralNavigationObject.present(cell, arg)
-
     def _getAll(self, structuralNavigationObject, arg=None):
         """Returns all the instances of structuralNavigationObject."""
-        if not structuralNavigationObject.criteria:
-            return [], None
+
+        focus = focus_manager.get_manager().get_locus_of_focus()
+        modalDialog = AXObject.find_ancestor_inclusive(focus, AXUtilities.is_modal_dialog)
+        inModalDialog = bool(modalDialog)
+        if self._inModalDialog != inModalDialog:
+            msg = (
+                f"STRUCTURAL NAVIGATION: in modal dialog has changed from "
+                f"{self._inModalDialog} to {inModalDialog}"
+            )
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            self.clearCache()
+            self._inModalDialog = inModalDialog
 
         document = self._script.utilities.documentFrame()
         cache = self._objectCache.get(hash(document), {})
-        key = "%s:%s" % (structuralNavigationObject.objType, arg)
-        matches, criteria = cache.get(key, ([], None))
+        key = f"{structuralNavigationObject.objType}:{arg}"
+        matches = cache.get(key, [])
         if matches:
-            return matches.copy(), criteria
+            tokens = ["STRUCTURAL NAVIGATION: Returning", len(matches), "matches from cache"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return matches.copy()
 
-        col = document.queryCollection()
-        criteria = structuralNavigationObject.criteria(col, arg)
-        rule = col.createMatchRule(criteria.states.raw(),
-                                   criteria.matchStates,
-                                   criteria.objAttrs,
-                                   criteria.matchObjAttrs,
-                                   criteria.roles,
-                                   criteria.matchRoles,
-                                   criteria.interfaces,
-                                   criteria.matchInterfaces,
-                                   criteria.invert)
-        matches = col.getMatches(rule, col.SORT_ORDER_CANONICAL, 0, True)
-        col.freeMatchRule(rule)
+        if structuralNavigationObject.getter:
+            matches = structuralNavigationObject.getter(document, arg)
+        elif not structuralNavigationObject.criteria:
+            return []
+        elif not AXObject.supports_collection(document):
+            tokens = ["STRUCTURAL NAVIGATION:", document, "does not support collection"]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            return []
+        else:
+            rule = structuralNavigationObject.criteria(arg)
+            matches = AXCollection.get_all_matches(document, rule)
 
-        rv = matches.copy(), criteria
-        cache[key] = matches, criteria
+        if inModalDialog:
+            originalSize = len(matches)
+            matches = [m for m in matches if AXObject.find_ancestor(m, lambda x: x == modalDialog)]
+            tokens = ["STRUCTURAL NAVIGATION: Removed", {originalSize - len(matches)},
+                      "objects outside of modal dialog", modalDialog]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+
+        rv = matches.copy()
+        cache[key] = matches
         self._objectCache[hash(document)] = cache
         return rv
 
-    def goEdge(self, structuralNavigationObject, isStart, container=None, arg=None):
+    def goEdge(self, structuralNavigationObject, isStart, event, container=None, arg=None):
+        self._last_input_event = event
         if container is None:
             obj, offset = self._script.utilities.getCaretContext()
             container = self.getContainerForObject(obj)
 
-        if container is None or self._script.utilities.isDead(container):
+        if container is None or AXObject.is_dead(container):
             structuralNavigationObject.present(None, arg)
             return
 
@@ -903,6 +793,8 @@ class StructuralNavigation:
             structuralNavigationObject.present(obj, offset)
             return
 
+        # Unlike going to the start of the container, when we move to the next edge
+        # we pass beyond it on purpose. This makes us consistent with NVDA.
         obj, offset = self._script.utilities.lastContext(container)
         newObj, newOffset = self._script.utilities.nextContext(obj, offset)
         if not newObj:
@@ -915,11 +807,11 @@ class StructuralNavigation:
             return
 
         if obj == container:
-            obj = obj[-1]
+            obj = AXObject.get_child(obj, -1)
 
         structuralNavigationObject.present(obj, sameContainer=True)
 
-    def goObject(self, structuralNavigationObject, isNext, obj=None, arg=None):
+    def goObject(self, structuralNavigationObject, isNext, event, obj=None, arg=None):
         """The method used for navigation among StructuralNavigationObjects
         which are not table cells.
 
@@ -927,8 +819,9 @@ class StructuralNavigation:
         - structuralNavigationObject: the StructuralNavigationObject which
           represents the object of interest.
         - isNext: If True, we're interested in the next accessible object
-          which matches structuralNavigationObject.  If False, we're 
+          which matches structuralNavigationObject.  If False, we're
           interested in the previous accessible object which matches.
+        - event: The input event triggering this navigation
         - obj: the current object (typically the locusOfFocus).
         - arg: optional arguments which may need to be passed along to
           the predicate, presentation method, etc. For instance, in the
@@ -936,7 +829,8 @@ class StructuralNavigation:
           is needed and passed in as arg.
         """
 
-        matches, criteria = list(self._getAll(structuralNavigationObject, arg))
+        self._last_input_event = event
+        matches = self._getAll(structuralNavigationObject, arg)
         if not matches:
             structuralNavigationObject.present(None, arg)
             return
@@ -945,11 +839,11 @@ class StructuralNavigation:
             matches.reverse()
 
         def _isValidMatch(obj):
-            if self._script.utilities.isDead(obj):
+            if AXObject.is_dead(obj):
                 return False
-            if self._script.utilities.isHidden(obj) or self._script.utilities.isEmpty(obj):
+            if self._script.utilities.isHidden(obj) or self._script.utilities.is_empty(obj):
                 return False
-            if not criteria.applyPredicate:
+            if structuralNavigationObject.predicate is None:
                 return True
             return structuralNavigationObject.predicate(obj)
 
@@ -957,10 +851,11 @@ class StructuralNavigation:
             while obj:
                 if obj in matches:
                     return obj, matches.index(obj)
-                obj = obj.parent
+                obj = AXObject.get_parent(obj)
 
             return None, -1
 
+        offset = 0
         if not obj:
             obj, offset = self._script.utilities.getCaretContext()
         thisObj, index = _getMatchingObjAndIndex(obj)
@@ -968,15 +863,15 @@ class StructuralNavigation:
             matches = matches[index:]
             obj = thisObj
 
-        currentPath = pyatspi.utils.getPath(obj)
+        currentPath = AXObject.get_path(obj)
         for i, match in enumerate(matches):
             if not _isValidMatch(match):
                 continue
 
-            if match.parent == obj:
-                comparison = self._script.utilities.characterOffsetInParent(match) - offset
+            if AXObject.get_parent(match) == obj:
+                comparison = AXHypertext.get_character_offset_in_parent(match) - offset
             else:
-                path = pyatspi.utils.getPath(match)
+                path = AXObject.get_path(match)
                 comparison = self._script.utilities.pathComparison(path, currentPath)
             if (comparison > 0 and isNext) or (comparison < 0 and not isNext):
                 structuralNavigationObject.present(match, arg)
@@ -991,7 +886,7 @@ class StructuralNavigation:
         else:
             self._script.presentMessage(messages.WRAPPING_TO_TOP)
 
-        matches, criteria = list(self._getAll(structuralNavigationObject, arg))
+        matches = self._getAll(structuralNavigationObject, arg)
         if not isNext:
             matches.reverse()
 
@@ -1009,75 +904,32 @@ class StructuralNavigation:
     #########################################################################
 
     def _getListDescription(self, obj):
-        children = [x for x in obj if x.getRole() == pyatspi.ROLE_LIST_ITEM]
-        if not children:
-            return ""
+        if AXUtilities.is_list(obj):
+            children = list(AXObject.iter_children(obj, AXUtilities.is_list_item))
+            if children:
+                if self._script.utilities.nestingLevel(obj):
+                    return messages.nestedListItemCount(len(children))
+                else:
+                    return messages.listItemCount(len(children))
+        elif AXUtilities.is_description_list(obj):
+            children = AXUtilities.find_all_description_terms(obj)
+            if children:
+                return messages.descriptionListTermCount(len(children))
+        elif AXUtilities.is_page_tab_list(obj):
+            children = list(AXObject.iter_children(obj, AXUtilities.is_page_tab))
+            if children:
+                return messages.tabListItemCount(len(children))
 
-        return messages.listItemCount(len(children))
-
-    def _getTableCaption(self, obj):
-        """Returns a string which contains the table caption, or
-        None if a caption could not be found.
-
-        Arguments:
-        - obj: the accessible table whose caption we want.
-        """
-
-        caption = obj.queryTable().caption
-        try:
-            caption.queryText()
-        except:
-            return None
-        else:
-            return self._script.utilities.displayedText(caption)
-
-    def _getTableDescription(self, obj):
-        """Returns a string which describes the table."""
-
-        nonUniformString = ""
-        nonUniform = self._script.utilities.isNonUniformTable(obj)
-        if nonUniform:
-            nonUniformString = messages.TABLE_NON_UNIFORM + " "
-
-        nRows, nColumns = self._script.utilities.rowAndColumnCount(obj, True)
-        sizeString = messages.tableSize(nRows, nColumns)
-        return (nonUniformString + sizeString)
-
-    def getCellForObj(self, obj):
-        """Looks for a table cell in the ancestry of obj, if obj is not a
-        table cell.
-
-        Arguments:
-        - obj: the accessible object of interest.
-        """
-
-        cellRoles = [pyatspi.ROLE_TABLE_CELL,
-                     pyatspi.ROLE_COLUMN_HEADER,
-                     pyatspi.ROLE_ROW_HEADER]
-        isCell = lambda x: x and x.getRole() in cellRoles
-        if obj and not isCell(obj):
-            obj = pyatspi.utils.findAncestor(obj, isCell)
-
-        while obj and self._script.utilities.isLayoutOnly(self.getTableForCell(obj)):
-            cell = pyatspi.utils.findAncestor(obj, isCell)
-            if not cell:
-                break
-            obj = cell
-
-        return obj
+        return ""
 
     def _isContainer(self, obj):
-        try:
-            role = obj.getRole()
-        except:
-            return False
-
+        role = AXObject.get_role(obj)
         if role not in self.CONTAINER_ROLES:
             return False
 
-        if role == pyatspi.ROLE_SECTION \
-           and not self._script.utilities.isLandmark(obj) \
-           and not self._script.utilities.isBlockquote(obj):
+        if role == Atspi.Role.SECTION \
+           and not AXUtilities.is_landmark(obj) \
+           and not AXUtilities.is_block_quote(obj):
             return False
 
         return self._script.utilities.inDocumentContent(obj)
@@ -1089,7 +941,7 @@ class StructuralNavigation:
         if self._isContainer(obj):
             return obj
 
-        return pyatspi.utils.findAncestor(obj, self._isContainer)
+        return AXObject.find_ancestor(obj, self._isContainer)
 
     def getTableForCell(self, obj):
         """Looks for a table in the ancestry of obj, if obj is not a table.
@@ -1098,126 +950,10 @@ class StructuralNavigation:
         - obj: the accessible object of interest.
         """
 
-        isTable = lambda x: x and x.getRole() == pyatspi.ROLE_TABLE
-        if obj and not isTable(obj):
-            obj = pyatspi.utils.findAncestor(obj, isTable)
+        if obj and not AXUtilities.is_table(obj):
+            obj = AXObject.find_ancestor(obj, AXUtilities.is_table)
 
         return obj
-
-    def _isBlankCell(self, obj):
-        """Returns True if the table cell is empty or consists of whitespace.
-
-        Arguments:
-        - obj: the accessible table cell to examine
-        """
-
-        if obj and (obj.name or obj.childCount):
-            return False
-
-        try:
-            text = obj.queryText()
-        except:
-            pass
-        else:
-            if text.getText(0, -1).strip():
-                return False
-
-        return True
-
-    def _getCellText(self, obj):
-        """Looks at the table cell and tries to get its text.
-
-        Arguments:
-        - obj: the accessible table cell to examine
-        """
-
-        text = ""
-        if obj and not obj.childCount:
-            text = self._script.utilities.displayedText(obj)
-        else:
-            for child in obj:
-                childText = self._script.utilities.displayedText(child)
-                text = self._script.utilities.appendString(text, childText)
-
-        return text
-
-    def _presentCellHeaders(self, cell, oldCellInfo):
-        """Speaks the headers of the accessible table cell, cell.
-
-        Arguments:
-        - cell: the accessible table cell whose headers we wish to
-          present.
-        - oldCellInfo: [rowDiff, colDiff, oldRowHeaders, oldColHeaders]
-        """
-
-        if not cell or not oldCellInfo:
-            return
-
-        rowDiff, colDiff, oldRowHeaders, oldColHeaders = oldCellInfo
-        if not (oldRowHeaders or oldColHeaders):
-            return
-
-        if rowDiff:
-            rowHeaders = self._script.utilities.rowHeadersForCell(cell)
-            for header in rowHeaders:
-                if not header in oldRowHeaders:
-                    text = self._getCellText(header)
-                    speech.speak(text)
-
-        if colDiff:
-            colHeaders = self._script.utilities.columnHeadersForCell(cell)
-            for header in colHeaders:
-                if not header in oldColHeaders:
-                    text = self._getCellText(header)
-                    speech.speak(text)
-
-    def getCellCoordinates(self, obj, preferAttribute=True):
-        """Returns the [row, col] of a ROLE_TABLE_CELL or [-1, -1]
-        if the coordinates cannot be found.
-
-        Arguments:
-        - obj: the accessible table cell whose coordinates we want.
-        - preferAttribute: If True, prefer object attribute over table interface
-        """
-
-        cell = self.getCellForObj(obj)
-        table = self.getTableForCell(cell)
-        thisRow, thisCol = self._script.utilities.coordinatesForCell(cell, preferAttribute)
-
-        # If preferAttribute is True, we are getting coordinates to be spoken,
-        # and not to deal with the logic below.
-        if preferAttribute:
-            return thisRow, thisCol
-
-        # If we're in a cell that spans multiple rows and/or columns,
-        # thisRow and thisCol will refer to the upper left cell in
-        # the spanned range(s).  We're storing the lastTableCell that
-        # we're aware of in order to facilitate more linear movement.
-        # Therefore, if the lastTableCell and this table cell are the
-        # same cell, we'll go with the stored coordinates.
-        lastRow, lastCol = self.lastTableCell
-        lastCell = self._script.utilities.cellForCoordinates(table, lastRow, lastCol)
-        if lastCell == cell:
-            return lastRow, lastCol
-
-        return thisRow, thisCol
-
-    def _getCaretPosition(self, obj):
-        """Returns the [obj, characterOffset] where the caret should be
-        positioned. For most scripts, the object should not change and
-        the offset should be 0.  That's not always the case with Gecko.
-
-        Arguments:
-        - obj: the accessible object in which the caret should be
-          positioned.
-        """
-
-        return self._script.utilities.getFirstCaretPosition(obj)
-
-    def _setCaretPosition(self, obj, characterOffset):
-        """Sets the caret at the specified offset within obj."""
-
-        self._script.utilities.setCaretPosition(obj, characterOffset)
 
     def _presentLine(self, obj, offset):
         """Presents the first line of the object to the user.
@@ -1233,30 +969,13 @@ class StructuralNavigation:
         if self._presentWithSayAll(obj, offset):
             return
 
-        self._script.updateBraille(obj)
-        self._script.sayLine(obj)
-
-    def _presentObject(self, obj, offset, priorObj=None):
-        """Presents the entire object to the user.
-
-        Arguments:
-        - obj: the accessible object to be presented.
-        - offset: the character offset within obj.
-        """
-
-        if not obj:
-            return
-
-        if self._presentWithSayAll(obj, offset):
-            return
-
-        eventsynthesizer.scrollToTopEdge(obj)
-        self._script.presentObject(obj, offset=offset, priorObj=priorObj)
+        self._script.update_braille(obj)
+        self._script.sayLine(obj, offset)
 
     def _presentWithSayAll(self, obj, offset):
         if self._script.inSayAll() \
-           and _settingsManager.getSetting('structNavInSayAll'):
-            self._script.sayAll(obj, offset)
+           and settings_manager.get_manager().get_setting('structNavInSayAll'):
+            self._script.say_all(None, obj, offset)
             return True
 
         return False
@@ -1264,51 +983,49 @@ class StructuralNavigation:
     def _getRoleName(self, obj):
         # Another case where we'll do this for now, and clean it up when
         # object presentation is refactored.
-        return self._script.speechGenerator.getLocalizedRoleName(obj)
+        return self._script.speech_generator.get_localized_role_name(obj)
 
     def _getSelectedItem(self, obj):
         # Another case where we'll do this for now, and clean it up when
         # object presentation is refactored.
-        if obj.getRole() == pyatspi.ROLE_COMBO_BOX:
-            obj = obj[0]
-        try:
-            selection = obj.querySelection()
-        except NotImplementedError:
+        if AXUtilities.is_combo_box(obj):
+            obj = AXObject.get_child(obj, 0)
+
+        if not AXObject.supports_selection(obj):
             return None
 
-        return selection.getSelectedChild(0)
+        return AXSelection.get_selected_child(obj, 0)
 
     def _getText(self, obj):
         # Another case where we'll do this for now, and clean it up when
         # object presentation is refactored.
-        text = self._script.utilities.displayedText(obj)
-        if not text:
+        text = AXText.get_all_text(obj)
+        if "\ufffc" in text:
             text = self._script.utilities.expandEOCs(obj)
         if not text:
             item = self._getSelectedItem(obj)
             if item:
-                text = item.name
-        if not text and obj.getRole() == pyatspi.ROLE_IMAGE:
-            try:
-                image = obj.queryImage()
-            except:
-                text = obj.description
-            else:
-                text = image.imageDescription or obj.description
-            if not text and obj.parent.getRole() == pyatspi.ROLE_LINK:
-                text = self._script.utilities.linkBasename(obj.parent)
-        if not text and obj.getRole() == pyatspi.ROLE_LIST:
-            children = [x for x in obj if x.getRole() == pyatspi.ROLE_LIST_ITEM]
+                text = AXObject.get_name(item)
+        if not text and AXUtilities.is_image(obj):
+            text = AXObject.get_image_description(obj) or AXObject.get_description(obj)
+            if not text:
+                parent = AXObject.get_parent(obj)
+                if AXUtilities.is_link(parent):
+                    text = AXHypertext.get_link_basename(parent)
+        if not text and AXUtilities.is_list(obj):
+            children = [x for x in AXObject.iter_children(obj, AXUtilities.is_list_item)]
             text = " ".join(list(map(self._getText, children)))
+        if not text:
+            text = AXObject.get_name(obj)
 
         return text
 
     def _getLabel(self, obj):
         # Another case where we'll do this for now, and clean it up when
         # object presentation is refactored.
-        label = self._script.utilities.displayedLabel(obj)
+        label = AXUtilities.get_displayed_label(obj)
         if not label:
-            label, objects = self._script.labelInference.infer(
+            label, objects = self._script.label_inference.infer(
                 obj, focusedOnly=False)
 
         return label
@@ -1316,30 +1033,25 @@ class StructuralNavigation:
     def _getState(self, obj):
         # Another case where we'll do this for now, and clean it up when
         # object presentation is refactored.
-        try:
-            state = obj.getState()
-            role = obj.getRole()
-        except RuntimeError:
-            return ''
 
         # For now, we'll just grab the spoken indicator from settings.
         # When object presentation is refactored, we can clean this up.
-        if role == pyatspi.ROLE_CHECK_BOX:
+        if AXUtilities.is_check_box(obj):
             unchecked, checked, partially = object_properties.CHECK_BOX_INDICATORS_SPEECH
-            if state.contains(pyatspi.STATE_INDETERMINATE):
+            if AXUtilities.is_indeterminate(obj):
                 return partially
-            if state.contains(pyatspi.STATE_CHECKED):
+            if AXUtilities.is_checked(obj):
                 return checked
             return unchecked
 
-        if role == pyatspi.ROLE_RADIO_BUTTON:
+        if AXUtilities.is_radio_button(obj):
             unselected, selected = object_properties.RADIO_BUTTON_INDICATORS_SPEECH
-            if state.contains(pyatspi.STATE_CHECKED):
+            if AXUtilities.is_checked(obj):
                 return selected
             return unselected
 
-        if role == pyatspi.ROLE_LINK:
-            if state.contains(pyatspi.STATE_VISITED):
+        if AXUtilities.is_link(obj):
+            if AXUtilities.is_visited(obj):
                 return object_properties.STATE_VISITED
             else:
                 return object_properties.STATE_UNVISITED
@@ -1360,12 +1072,23 @@ class StructuralNavigation:
     # All structural navigation objects have the following essential
     # characteristics:
     #
-    # 1. Keybindings for goPrevious, goNext, and other such methods
-    # 2. A means of identification (at least a predicate and possibly
-    #    also criteria for generating a collection match rule)
-    # 3. A definition of how the object should be presented (both
-    #    when another instance of that object is found as well as
-    #    when it is not)
+    # 1. Keybindings for goPrevious, goNext, and other such methods.
+    #    This is a dictionary. See _setUpHandlersAndBindings() for
+    #    supported values. But "previous", "next", and "list" are
+    #    typically what you'll need.
+    # 2. A means of identification: MatchCriteria and optional predicate.
+    #    The MatchCriteria is required. For ATK implementations, AT-SPI2
+    #    implements Collection. Applications and toolkits which implement
+    #    AT-SPI2 directly should provide the implementation because our
+    #    getting all objects via a tree dive is extremely non-performant.
+    #    The predicate is only needed if Collection lacks something we
+    #    need to identify the object is really the thing we want. Usually
+    #    the predicate is not needed and can remain undefined.
+    # 3. A definition of how the object should be presented (both when
+    #    another instance of that object is found as well as when it is
+    #    not). This function should do the presentation.
+    # 4. Details needed to populate the dialog with the object list is
+    #    presented.
     #
     # Convenience methods have been put into place whereby one can
     # create an object (FOO = "foo"), and then provide the following
@@ -1375,11 +1098,7 @@ class StructuralNavigation:
     # the script, the structural navigation object should be created
     # and set up automagically. At least that is the idea. :-) This
     # hopefully will also enable easy re-definition of existing
-    # objects on a script-by-script basis.  For instance, in the
-    # StarOffice script, overriding the _blockquotePredicate should
-    # be all that is needed to implement navigation by blockquote
-    # in OOo Writer documents.
-    #
+    # objects on a script-by-script basis.
 
     ########################
     #                      #
@@ -1388,10 +1107,6 @@ class StructuralNavigation:
     ########################
 
     def _blockquoteBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating among blockquotes.
-        """
-
         bindings = {}
         prevDesc = cmdnames.BLOCKQUOTE_PREV
         bindings["previous"] = ["q", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -1403,48 +1118,20 @@ class StructuralNavigation:
         bindings["list"] = ["q", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _blockquoteCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating blockquotes
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        attrs = ['tag:BLOCKQUOTE']
-        return MatchCriteria(collection, objAttrs=attrs)
-
-    def _blockquotePredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a blockquote.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        return self._script.utilities.isBlockquote(obj)
+    def _blockquoteGetter(self, document, arg=None):
+        return AXUtilities.find_all_block_quotes(document)
 
     def _blockquotePresentation(self, obj, arg=None):
-        """Presents the blockquote or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_BLOCKQUOTES
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _blockquoteDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_BLOCKQUOTE]
@@ -1461,10 +1148,6 @@ class StructuralNavigation:
     ########################
 
     def _buttonBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst buttons.
-        """
-
         bindings = {}
         prevDesc = cmdnames.BUTTON_PREV
         bindings["previous"] = ["b", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -1476,58 +1159,20 @@ class StructuralNavigation:
         bindings["list"] = ["b", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _buttonCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating buttons
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_PUSH_BUTTON, pyatspi.ROLE_TOGGLE_BUTTON]
-        state = [pyatspi.STATE_SENSITIVE]
-        stateMatch = collection.MATCH_ALL
-        return MatchCriteria(collection,
-                             states=state,
-                             matchStates=stateMatch,
-                             roles=role)
-
-    def _buttonPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a button.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        isMatch = False
-        if obj and obj.getRole() in [pyatspi.ROLE_PUSH_BUTTON, pyatspi.ROLE_TOGGLE_BUTTON]:
-            state = obj.getState()
-            isMatch = state.contains(pyatspi.STATE_SENSITIVE)
-
-        return isMatch
+    def _buttonGetter(self, document, arg=None):
+        return AXUtilities.find_all_buttons(document)
 
     def _buttonPresentation(self, obj, arg=None):
-        """Presents the button or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_BUTTONS
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _buttonDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_BUTTON]
@@ -1544,10 +1189,6 @@ class StructuralNavigation:
     ########################
 
     def _checkBoxBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst check boxes.
-        """
-
         bindings = {}
         prevDesc = cmdnames.CHECK_BOX_PREV
         bindings["previous"] = ["x", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -1559,59 +1200,20 @@ class StructuralNavigation:
         bindings["list"] = ["x", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _checkBoxCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating check boxes
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_CHECK_BOX]
-        state = [pyatspi.STATE_FOCUSABLE, pyatspi.STATE_SENSITIVE]
-        stateMatch = collection.MATCH_ALL
-        return MatchCriteria(collection,
-                             states=state,
-                             matchStates=stateMatch,
-                             roles=role)
-
-    def _checkBoxPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a check box.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        isMatch = False
-        if obj and obj.getRole() == pyatspi.ROLE_CHECK_BOX:
-            state = obj.getState()
-            isMatch = state.contains(pyatspi.STATE_FOCUSABLE) \
-                  and state.contains(pyatspi.STATE_SENSITIVE)
-
-        return isMatch
+    def _checkBoxGetter(self, document, arg=None):
+        return AXUtilities.find_all_check_boxes(document)
 
     def _checkBoxPresentation(self, obj, arg=None):
-        """Presents the check box or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_CHECK_BOXES
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _checkBoxDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_CHECK_BOX]
@@ -1629,10 +1231,6 @@ class StructuralNavigation:
     ########################
 
     def _chunkBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst chunks/large objects.
-        """
-
         bindings = {}
         prevDesc = cmdnames.LARGE_OBJECT_PREV
         bindings["previous"] = ["o", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -1644,71 +1242,35 @@ class StructuralNavigation:
         bindings["list"] = ["o", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _chunkCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating chunks/
-        large objects by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = self.OBJECT_ROLES + self.CONTAINER_ROLES
-        roleMatch = collection.MATCH_ANY
-        return MatchCriteria(collection,
-                             roles=role,
-                             matchRoles=roleMatch,
-                             applyPredicate=True)
+    def _chunkCriteria(self, arg=None):
+        return AXCollection.create_match_rule(roles=self.OBJECT_ROLES + self.CONTAINER_ROLES)
 
     def _chunkPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a chunk.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if not obj:
-            return False
-
-        role = obj.getRole()
-        if role not in self.OBJECT_ROLES + self.CONTAINER_ROLES:
-            return False
-
-        if role == pyatspi.ROLE_HEADING:
+        if AXUtilities.is_heading(obj):
             return True
 
-        text = self._script.utilities.queryNonEmptyText(obj)
-        if not (text and text.characterCount > settings.largeObjectTextLength):
+        length = AXText.get_character_count(obj)
+        if length < settings.largeObjectTextLength:
             return False
 
-        string = text.getText(0, -1)
+        string = AXText.get_all_text(obj)
         eocs = string.count(self._script.EMBEDDED_OBJECT_CHARACTER)
-        if eocs/text.characterCount < 0.05:
+        if eocs/length < 0.05:
             return True
 
         return False
 
     def _chunkPresentation(self, obj, arg=None):
-        """Presents the chunk or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [newObj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(newObj, characterOffset)
-            self._presentObject(obj, 0)
-        else:
+        if obj is None:
             full = messages.NO_MORE_CHUNKS
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _chunkDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_OBJECT]
@@ -1726,10 +1288,6 @@ class StructuralNavigation:
     ########################
 
     def _comboBoxBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst combo boxes.
-        """
-
         bindings = {}
         prevDesc = cmdnames.COMBO_BOX_PREV
         bindings["previous"] = ["c", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -1741,59 +1299,20 @@ class StructuralNavigation:
         bindings["list"] = ["c", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _comboBoxCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating combo boxes
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_COMBO_BOX]
-        state = [pyatspi.STATE_FOCUSABLE, pyatspi.STATE_SENSITIVE]
-        stateMatch = collection.MATCH_ALL
-        return MatchCriteria(collection,
-                             states=state,
-                             matchStates=stateMatch,
-                             roles=role)
-
-    def _comboBoxPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a combo box.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        isMatch = False
-        if obj and obj.getRole() == pyatspi.ROLE_COMBO_BOX:
-            state = obj.getState()
-            isMatch = state.contains(pyatspi.STATE_FOCUSABLE) \
-                  and state.contains(pyatspi.STATE_SENSITIVE)
-
-        return isMatch
+    def _comboBoxGetter(self, document, arg=None):
+        return AXUtilities.find_all_combo_boxes(document)
 
     def _comboBoxPresentation(self, obj, arg=None):
-        """Presents the combo box or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_COMBO_BOXES
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _comboBoxDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_COMBO_BOX]
@@ -1811,10 +1330,6 @@ class StructuralNavigation:
     ########################
 
     def _entryBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst entries.
-        """
-
         bindings = {}
         prevDesc = cmdnames.ENTRY_PREV
         bindings["previous"] = ["e", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -1826,57 +1341,23 @@ class StructuralNavigation:
         bindings["list"] = ["e", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _entryCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating entries
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        state = [pyatspi.STATE_FOCUSABLE,
-                 pyatspi.STATE_SENSITIVE,
-                 pyatspi.STATE_EDITABLE]
-        stateMatch = collection.MATCH_ALL
-        return MatchCriteria(collection,
-                             states=state,
-                             matchStates=stateMatch,
-                             applyPredicate=True)
-
-    def _entryPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is an entry.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if not obj and obj.parent:
-            return False
-
-        return not obj.parent.getState().contains(pyatspi.STATE_EDITABLE)
+    def _entryGetter(self, document, arg=None):
+        def parent_is_not_editable(obj):
+            parent = AXObject.get_parent(obj)
+            return parent is not None and not AXUtilities.is_editable(parent)
+        return AXUtilities.find_all_editable_objects(document, pred=parent_is_not_editable)
 
     def _entryPresentation(self, obj, arg=None):
-        """Presents the entry or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_ENTRIES
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _entryDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_LABEL]
@@ -1894,89 +1375,39 @@ class StructuralNavigation:
     ########################
 
     def _formFieldBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst form fields.
-        """
-
         bindings = {}
         prevDesc = cmdnames.FORM_FIELD_PREV
-        bindings["previous"] = ["Tab",
-                                keybindings.ORCA_SHIFT_MODIFIER_MASK,
-                                prevDesc]
+        bindings["previous"] = ["f", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
 
         nextDesc = cmdnames.FORM_FIELD_NEXT
-        bindings["next"] = ["Tab", keybindings.ORCA_MODIFIER_MASK, nextDesc]
+        bindings["next"] = ["f", keybindings.NO_MODIFIER_MASK, nextDesc]
 
         listDesc = cmdnames.FORM_FIELD_LIST
         bindings["list"] = ["f", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _formFieldCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating form fields
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = self.FORM_ROLES
-        roleMatch = collection.MATCH_ANY
-        state = [pyatspi.STATE_FOCUSABLE, pyatspi.STATE_SENSITIVE]
-        stateMatch = collection.MATCH_ALL
-        return MatchCriteria(collection,
-                             states=state,
-                             matchStates=stateMatch,
-                             roles=role,
-                             matchRoles=roleMatch,
-                             applyPredicate=True)
-
-    def _formFieldPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a form field.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if not obj:
-            return False
-
-        role = obj.getRole()
-        if not role in self.FORM_ROLES:
-            return False
-
-        state = obj.getState()
-        isMatch = state.contains(pyatspi.STATE_FOCUSABLE) \
-                  and state.contains(pyatspi.STATE_SENSITIVE)
-
-        if role == pyatspi.ROLE_DOCUMENT_FRAME:
-            isMatch = isMatch and state.contains(pyatspi.STATE_EDITABLE)
-
-        return isMatch
+    def _formFieldGetter(self, document, arg=None):
+        def is_not_noneditable_doc_frame(obj):
+            if AXUtilities.is_document_frame(obj):
+                return AXUtilities.is_editable(obj)
+            return True
+        return AXUtilities.find_all_form_fields(document, pred=is_not_noneditable_doc_frame)
 
     def _formFieldPresentation(self, obj, arg=None):
-        """Presents the form field or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            if obj.getRole() == pyatspi.ROLE_TEXT and obj.childCount:
-                obj = obj[0]
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_FORM_FIELDS
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        # TODO - JD: Determine if this is still needed.
+        if AXUtilities.is_text(obj) and AXObject.get_child_count(obj):
+            obj = AXObject.get_child(obj, 0)
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _formFieldDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_LABEL]
@@ -1997,10 +1428,6 @@ class StructuralNavigation:
     ########################
 
     def _headingBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst headings.
-        """
-
         bindings = {}
         prevDesc = cmdnames.HEADING_PREV
         bindings["previous"] = ["h", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -2038,71 +1465,25 @@ class StructuralNavigation:
         return bindings
 
     def _headingLevels(self):
-        """Returns the [minimum heading level, maximum heading level]
-        which should be navigable via structural navigation.
-        """
-
         return [1, 6]
 
-    def _headingCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating headings
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_HEADING]
-        attrs = []
-        if arg:
-            attrs.append('level:%d' % arg)
-
-        return MatchCriteria(collection,
-                             roles=role,
-                             objAttrs=attrs)
-
-    def _headingPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a heading.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        isMatch = False
-        if obj and obj.getRole() == pyatspi.ROLE_HEADING:
-            if arg:
-                isMatch = arg == self._script.utilities.headingLevel(obj)
-            else:
-                isMatch = True
-
-        return isMatch
+    def _headingGetter(self, document, arg=None):
+        if arg is not None:
+            return AXUtilities.find_all_headings_at_level(document, level=arg)
+        return AXUtilities.find_all_headings(document)
 
     def _headingPresentation(self, obj, arg=None):
-        """Presents the heading or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        elif not arg:
+        if obj is None:
+            brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             full = messages.NO_MORE_HEADINGS
-            brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
+            if arg is not None:
+                full = messages.NO_MORE_HEADINGS_AT_LEVEL % arg
             self._script.presentMessage(full, brief)
-        else:
-            full = messages.NO_MORE_HEADINGS_AT_LEVEL % arg
-            brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
-            self._script.presentMessage(full, brief)
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _headingDialogData(self, arg=None):
         columnHeaders = [guilabels.SN_HEADER_HEADING]
@@ -2125,14 +1506,55 @@ class StructuralNavigation:
 
     ########################
     #                      #
+    # Iframes              #
+    #                      #
+    ########################
+
+    def _iframeBindings(self):
+        bindings = {}
+        prevDesc = cmdnames.IFRAME_PREV
+        bindings["previous"] = ["", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
+
+        nextDesc = cmdnames.IFRAME_NEXT
+        bindings["next"] = ["", keybindings.NO_MODIFIER_MASK, nextDesc]
+
+        listDesc = cmdnames.IFRAME_LIST
+        bindings["list"] = ["", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
+        return bindings
+
+    def _iframeGetter(self, document, arg=None):
+        return AXUtilities.find_all_internal_frames(document)
+
+    def _iframePresentation(self, obj, arg=None):
+        if obj is None:
+            full = messages.NO_MORE_IFRAMES
+            brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
+            self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
+
+    def _iframeDialogData(self):
+        columnHeaders = [guilabels.SN_HEADER_IFRAME]
+
+        def rowData(obj):
+            name = AXObject.get_name(obj)
+            if not name and AXObject.get_child_count(obj):
+                name = AXObject.get_name(AXObject.get_child(obj, 0))
+            return [name or self._getRoleName(obj)]
+
+        return guilabels.SN_TITLE_IFRAME, columnHeaders, rowData
+
+    ########################
+    #                      #
     # Images               #
     #                      #
     ########################
 
     def _imageBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst images."""
-
         bindings = {}
         prevDesc = cmdnames.IMAGE_PREV
         bindings["previous"] = ["g", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -2144,47 +1566,20 @@ class StructuralNavigation:
         bindings["list"] = ["g", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _imageCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating images
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        return MatchCriteria(collection, roles=self.IMAGE_ROLES)
-
-    def _imagePredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is an image.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        return (obj and obj.getRole() in self.IMAGE_ROLES)
+    def _imageGetter(self, document, arg=None):
+        return AXUtilities.find_all_images_and_image_maps(document)
 
     def _imagePresentation(self, obj, arg=None):
-        """Presents the image/graphic or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [newObj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(newObj, characterOffset)
-            self._presentObject(obj, 0)
-        else:
+        if obj is None:
             full = messages.NO_MORE_IMAGES
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _imageDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_IMAGE]
@@ -2201,10 +1596,6 @@ class StructuralNavigation:
     ########################
 
     def _landmarkBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst landmarks.
-        """
-
         bindings = {}
         prevDesc = cmdnames.LANDMARK_PREV
         bindings["previous"] = ["m", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -2216,73 +1607,28 @@ class StructuralNavigation:
         bindings["list"] = ["m", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _landmarkCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating landmarks
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if self._script.utilities.supportsLandmarkRole():
-            return MatchCriteria(collection, roles=[pyatspi.ROLE_LANDMARK])
-
-        # NOTE: there is a limitation in the AT-SPI Collections interface
-        # when it comes to an attribute whose value can be a list.  For
-        # example, the xml-roles attribute can be a space-separate list
-        # of roles.  We'd like to make a match if the xml-roles attribute
-        # has one (or any) of the roles we care about.  Instead, we're
-        # restricted to an exact match.  So, the below will only work in 
-        # the cases where the xml-roles attribute value consists solely of a
-        # single role.  In practice, this seems to be the case that we run
-        # into for the landmark roles.
-        #
-        attrs = []
-        landmarkTypes = self._script.utilities.getLandmarkTypes()
-        for landmark in landmarkTypes:
-            attrs.append('xml-roles:' + landmark)
-
-        return MatchCriteria(collection, objAttrs=attrs)
-
-    def _landmarkPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a landmark.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        return self._script.utilities.isLandmark(obj)
+    def _landmarkGetter(self, document, arg=None):
+        return AXUtilities.find_all_landmarks(document)
 
     def _landmarkPresentation(self, obj, arg=None):
-        """Presents the landmark or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._script.presentMessage(obj.name)
-            self._presentLine(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_LANDMARK_FOUND
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentMessage(AXObject.get_name(obj))
+        self._presentLine(obj, 0)
 
     def _landmarkDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_LANDMARK]
         columnHeaders.append(guilabels.SN_HEADER_ROLE)
 
         def rowData(obj):
-            return [obj.name, self._getRoleName(obj)]
+            return [AXObject.get_name(obj), self._getRoleName(obj)]
 
         return guilabels.SN_TITLE_LANDMARK, columnHeaders, rowData
 
@@ -2293,10 +1639,6 @@ class StructuralNavigation:
     ########################
 
     def _listBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst (un)ordered lists.
-        """
-
         bindings = {}
         prevDesc = cmdnames.LIST_PREV
         bindings["previous"] = ["l", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -2308,60 +1650,21 @@ class StructuralNavigation:
         bindings["list"] = ["l", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _listCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating (un)ordered
-        lists by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_LIST]
-        state = [pyatspi.STATE_FOCUSABLE]
-        stateMatch = collection.MATCH_NONE
-        return MatchCriteria(collection,
-                             states=state,
-                             matchStates=stateMatch,
-                             roles=role)
-
-    def _listPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is an (un)ordered list.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        isMatch = False
-
-        if obj and obj.getRole() == pyatspi.ROLE_LIST:
-            isMatch = not obj.getState().contains(pyatspi.STATE_FOCUSABLE)
-
-        return isMatch
+    def _listGetter(self, document, arg=None):
+        return AXUtilities.find_all_lists(
+            document, include_description_lists=True, include_tab_lists=True)
 
     def _listPresentation(self, obj, arg=None):
-        """Presents the (un)ordered list or indicates that one was not
-        found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            self._script.speakMessage(self._getListDescription(obj))
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentLine(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_LISTS
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        focus_manager.get_manager().set_locus_of_focus(None, AXObject.get_child(obj, 0) or obj)
 
     def _listDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_LIST]
@@ -2378,10 +1681,6 @@ class StructuralNavigation:
     ########################
 
     def _listItemBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst items in an (un)ordered list.
-        """
-
         bindings = {}
         prevDesc = cmdnames.LIST_ITEM_PREV
         bindings["previous"] = ["i", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -2393,59 +1692,21 @@ class StructuralNavigation:
         bindings["list"] = ["i", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _listItemCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating items in an
-        (un)ordered list by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_LIST_ITEM]
-        state = [pyatspi.STATE_FOCUSABLE]
-        stateMatch = collection.MATCH_NONE
-        return MatchCriteria(collection,
-                             states=state,
-                             matchStates=stateMatch,
-                             roles=role)
-
-    def _listItemPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is an item in an (un)ordered list.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        isMatch = False
-
-        if obj and obj.getRole() == pyatspi.ROLE_LIST_ITEM:
-            isMatch = not obj.getState().contains(pyatspi.STATE_FOCUSABLE)
-
-        return isMatch
+    def _listItemGetter(self, document, arg=None):
+        return AXUtilities.find_all_list_items(
+            document, include_description_terms=True, include_tabs=True)
 
     def _listItemPresentation(self, obj, arg=None):
-        """Presents the (un)ordered list item or indicates that one was not
-        found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentLine(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_LIST_ITEMS
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _listItemDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_LIST_ITEM]
@@ -2462,10 +1723,6 @@ class StructuralNavigation:
     ########################
 
     def _liveRegionBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst live regions.
-        """
-
         bindings = {}
         prevDesc = cmdnames.LIVE_REGION_PREV
         bindings["previous"] = ["d", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -2477,57 +1734,20 @@ class StructuralNavigation:
         bindings["last"] = ["y", keybindings.NO_MODIFIER_MASK, desc]
         return bindings
 
-    def _liveRegionCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating live regions
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        # Matches based on object attributes assume unique name-value pairs
-        # because pyatspi creates a dictionary from the list. In addition,
-        # wildcard matching is not possible. As a result, we cannot search
-        # for any object which has an attribute named container-live.
-        return MatchCriteria(collection, applyPredicate=True)
-
-    def _liveRegionPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a live region.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        isMatch = False
-
-        regobjs = self._script.liveRegionManager.getLiveNoneObjects()
-        if self._script.liveRegionManager.matchLiveRegion(obj) or obj in regobjs:
-            isMatch = True
-
-        return isMatch
+    def _liveRegionGetter(self, document, arg=None):
+        return AXUtilities.find_all_live_regions(document)
 
     def _liveRegionPresentation(self, obj, arg=None):
-        """Presents the live region or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_LIVE_REGIONS
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     ########################
     #                      #
@@ -2536,10 +1756,6 @@ class StructuralNavigation:
     ########################
 
     def _paragraphBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst paragraphs.
-        """
-
         bindings = {}
         prevDesc = cmdnames.PARAGRAPH_PREV
         bindings["previous"] = ["p", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -2551,72 +1767,29 @@ class StructuralNavigation:
         bindings["list"] = ["p", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _paragraphCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating paragraphs
-        by collection.
+    def _paragraphGetter(self, document, arg=None):
+        def has_at_least_three_characters(obj):
+            if AXUtilities.is_heading(obj):
+                return True
+            # We're choosing 3 characters as the minimum because some
+            # paragraphs contain a single image or link and a text
+            # of length 2: An embedded object character and a space.
+            # We want to skip these.
+            return AXText.get_character_count(obj) > 2
 
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        # Treat headings as paragraphs so that the user doesn't miss context when
-        # the topic of the paragraph changes. Besides, a heading is paragraphy.
-
-        role = [pyatspi.ROLE_PARAGRAPH, pyatspi.ROLE_HEADING]
-        roleMatch = collection.MATCH_ANY
-        return MatchCriteria(collection, roles=role, matchRoles=roleMatch, applyPredicate=True)
-
-    def _paragraphPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a paragraph.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if not obj:
-            return False
-
-        role = obj.getRole()
-        if role == pyatspi.ROLE_HEADING:
-            return True
-
-        isMatch = False
-        if role == pyatspi.ROLE_PARAGRAPH:
-            try:
-                text = obj.queryText()
-                # We're choosing 3 characters as the minimum because some
-                # paragraphs contain a single image or link and a text
-                # of length 2: An embedded object character and a space.
-                # We want to skip these.
-                #
-                isMatch = text.characterCount > 2
-            except:
-                pass
-
-        return isMatch
+        return AXUtilities.find_all_paragraphs(document, True, has_at_least_three_characters)
 
     def _paragraphPresentation(self, obj, arg=None):
-        """Presents the paragraph or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [newObj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(newObj, characterOffset)
-            self._presentObject(obj, 0)
-        else:
+        if obj is None:
             full = messages.NO_MORE_PARAGRAPHS
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _paragraphDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_PARAGRAPH]
@@ -2633,10 +1806,6 @@ class StructuralNavigation:
     ########################
 
     def _radioButtonBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst radio buttons.
-        """
-
         bindings = {}
         prevDesc = cmdnames.RADIO_BUTTON_PREV
         bindings["previous"] = ["r", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -2648,59 +1817,20 @@ class StructuralNavigation:
         bindings["list"] = ["r", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _radioButtonCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating radio buttons
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_RADIO_BUTTON]
-        state = [pyatspi.STATE_FOCUSABLE, pyatspi.STATE_SENSITIVE]
-        stateMatch = collection.MATCH_ALL
-        return MatchCriteria(collection,
-                             states=state,
-                             matchStates=stateMatch,
-                             roles=role)
-
-    def _radioButtonPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a radio button.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        isMatch = False
-        if obj and obj.getRole() == pyatspi.ROLE_RADIO_BUTTON:
-            state = obj.getState()
-            isMatch = state.contains(pyatspi.STATE_FOCUSABLE) \
-                  and state.contains(pyatspi.STATE_SENSITIVE)
-
-        return isMatch
+    def _radioButtonGetter(self, document, arg=None):
+        return AXUtilities.find_all_radio_buttons(document)
 
     def _radioButtonPresentation(self, obj, arg=None):
-        """Presents the radio button or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_RADIO_BUTTONS
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _radioButtonDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_RADIO_BUTTON]
@@ -2718,10 +1848,6 @@ class StructuralNavigation:
     ########################
 
     def _separatorBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst separators.
-        """
-
         bindings = {}
         prevDesc = cmdnames.SEPARATOR_PREV
         bindings["previous"] = ["s", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -2730,48 +1856,20 @@ class StructuralNavigation:
         bindings["next"] = ["s", keybindings.NO_MODIFIER_MASK, nextDesc]
         return bindings
 
-    def _separatorCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating separators
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_SEPARATOR]
-        return MatchCriteria(collection, roles=role, applyPredicate=False)
-
-    def _separatorPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a separator.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        return obj and obj.getRole() == pyatspi.ROLE_SEPARATOR
+    def _separatorGetter(self, document, arg=None):
+        return AXUtilities.find_all_separators(document)
 
     def _separatorPresentation(self, obj, arg=None):
-        """Presents the separator or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [newObj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(newObj, characterOffset)
-            self._presentObject(obj, 0)
-        else:
+        if obj is None:
             full = messages.NO_MORE_SEPARATORS
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     ########################
     #                      #
@@ -2780,10 +1878,6 @@ class StructuralNavigation:
     ########################
 
     def _tableBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst tables.
-        """
-
         bindings = {}
         prevDesc = cmdnames.TABLE_PREV
         bindings["previous"] = ["t", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -2795,179 +1889,48 @@ class StructuralNavigation:
         bindings["list"] = ["t", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _tableCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating tables
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_TABLE]
-        return MatchCriteria(collection, roles=role, applyPredicate=True)
-
-    def _tablePredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a table.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if not (obj and obj.childCount and obj.getRole() == pyatspi.ROLE_TABLE):
-            return False
-
-        attrs = self._script.utilities.objectAttributes(obj)
-        if attrs.get('layout-guess') == 'true':
-            return False
-
-        try:
-            return obj.queryTable().nRows > 0
-        except:
-            pass
-
-        return False
+    def _tableGetter(self, document, arg=None):
+        return AXUtilities.find_all_tables(document)
 
     def _tablePresentation(self, obj, arg=None):
-        """Presents the table or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            caption = self._getTableCaption(obj)
-            if caption:
-                self._script.presentMessage(caption)
-            self._script.presentMessage(self._getTableDescription(obj))
-            cell = obj.queryTable().getAccessibleAt(0, 0)
-            if not cell:
-                msg = 'ERROR: Broken table interface for %s' % obj
-                debug.println(debug.LEVEL_INFO, msg)
-                cell = pyatspi.findDescendant(obj, self._tableCellPredicate)
-                if cell:
-                    msg = 'HACK: Located %s for first cell' % cell
-                    debug.println(debug.LEVEL_INFO, msg)
-
-            self.lastTableCell = [0, 0]
-            self._presentObject(cell, 0, priorObj=obj)
-            [cell, characterOffset] = self._getCaretPosition(cell)
-            self._setCaretPosition(cell, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_TABLES
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        caption = AXTable.get_caption(obj)
+        if caption:
+            self._script.presentMessage(AXText.get_all_text(caption))
+        self._script.presentMessage(AXTable.get_table_description_for_presentation(obj))
+        cell = AXTable.get_cell_at(obj, 0, 0)
+        if not cell:
+            tokens = ["STRUCTURAL NAVIGATION: Broken table interface for", obj]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+            cell = AXObject.find_descendant(obj, AXUtilities.is_table_cell)
+            if cell:
+                tokens = ["STRUCTURAL NAVIGATION: Located", cell, "for first cell"]
+                debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+
+        self.lastTableCell = [0, 0]
+        if self._presentWithSayAll(cell, 0):
+            return
+
+        self._script.presentObject(cell, offset=0, priorObj=obj, interrupt=True)
 
     def _tableDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_CAPTION]
         columnHeaders.append(guilabels.SN_HEADER_DESCRIPTION)
 
         def rowData(obj):
-            return [self._getTableCaption(obj) or '',
-                    self._getTableDescription(obj)]
+            caption = AXTable.get_caption(obj)
+            if caption:
+                name = AXText.get_all_text(caption)
+            else:
+                name = AXObject.get_name(obj)
+            return [name, AXTable.get_table_description_for_presentation(obj)]
 
         return guilabels.SN_TITLE_TABLE, columnHeaders, rowData
-
-    ########################
-    #                      #
-    # Table Cells          #
-    #                      #
-    ########################
-
-    def _tableCellBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating spatially amongst table cells.
-        """
-
-        bindings = {}
-        desc = cmdnames.TABLE_CELL_LEFT
-        bindings["left"] = ["Left", keybindings.SHIFT_ALT_MODIFIER_MASK, desc]
-
-        desc = cmdnames.TABLE_CELL_RIGHT
-        bindings["right"] = ["Right", keybindings.SHIFT_ALT_MODIFIER_MASK, desc]
-
-        desc = cmdnames.TABLE_CELL_UP
-        bindings["up"] = ["Up", keybindings.SHIFT_ALT_MODIFIER_MASK, desc]
-
-        desc = cmdnames.TABLE_CELL_DOWN
-        bindings["down"] = ["Down", keybindings.SHIFT_ALT_MODIFIER_MASK, desc]
-
-        desc = cmdnames.TABLE_CELL_FIRST
-        bindings["first"] = ["Home", keybindings.SHIFT_ALT_MODIFIER_MASK, desc]
-
-        desc = cmdnames.TABLE_CELL_LAST
-        bindings["last"] = ["End", keybindings.SHIFT_ALT_MODIFIER_MASK, desc]
-        return bindings
-
-    def _tableCellCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating table cells
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_TABLE_CELL,
-                pyatspi.ROLE_COLUMN_HEADER,
-                pyatspi.ROLE_ROW_HEADER]
-        return MatchCriteria(collection, roles=role)
-
-    def _tableCellPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a table cell.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        return (obj and obj.getRole() in [pyatspi.ROLE_COLUMN_HEADER,
-                                          pyatspi.ROLE_ROW_HEADER,
-                                          pyatspi.ROLE_TABLE_CELL])
-
-    def _tableCellPresentation(self, cell, arg):
-        """Presents the table cell or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if not cell:
-            return
-
-        if settings.speakCellHeaders:
-            self._presentCellHeaders(cell, arg)
-
-        [obj, characterOffset] = self._getCaretPosition(cell)
-        self._setCaretPosition(obj, characterOffset)
-        self._script.updateBraille(obj)
-
-        blank = self._isBlankCell(cell)
-        if not blank:
-            self._presentObject(cell, 0)
-        else:
-            speech.speak(messages.BLANK)
-
-        if settings.speakCellCoordinates:
-            [row, col] = self.getCellCoordinates(cell)
-            self._script.presentMessage(messages.TABLE_CELL_COORDINATES \
-                                        % {"row" : row + 1, "column" : col + 1})
-
-        rowspan, colspan = self._script.utilities.rowAndColumnSpan(cell)
-        spanString = messages.cellSpan(rowspan, colspan)
-        if spanString and settings.speakCellSpan:
-            self._script.presentMessage(spanString)
 
     ########################
     #                      #
@@ -2976,10 +1939,6 @@ class StructuralNavigation:
     ########################
 
     def _unvisitedLinkBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst unvisited links.
-        """
-
         bindings = {}
         prevDesc = cmdnames.UNVISITED_LINK_PREV
         bindings["previous"] = ["u", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -2992,69 +1951,27 @@ class StructuralNavigation:
 
         return bindings
 
-    def _unvisitedLinkCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating unvisited links
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_LINK]
-        state = [pyatspi.STATE_VISITED]
-        stateMatch = collection.MATCH_NONE
-        return MatchCriteria(collection,
-                             states=state,
-                             matchStates=stateMatch,
-                             roles=role,
-                             applyPredicate=True)
-
-    def _unvisitedLinkPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is an unvisited link.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        isMatch = False
-
-        if obj and obj.getRole() == pyatspi.ROLE_LINK:
-            state = obj.getState()
-            isMatch = not state.contains(pyatspi.STATE_VISITED) \
-                and state.contains(pyatspi.STATE_FOCUSABLE)
-
-        return isMatch
+    def _unvisitedLinkGetter(self, document, arg=None):
+        return AXUtilities.find_all_unvisited_links(document)
 
     def _unvisitedLinkPresentation(self, obj, arg=None):
-        """Presents the unvisited link or indicates that one was not
-        found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_UNVISITED_LINKS
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _unvisitedLinkDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_LINK]
         columnHeaders.append(guilabels.SN_HEADER_URI)
 
         def rowData(obj):
-            return [self._getText(obj), self._script.utilities.uri(obj)]
+            return [self._getText(obj), AXHypertext.get_link_uri(obj)]
 
         return guilabels.SN_TITLE_UNVISITED_LINK, columnHeaders, rowData
 
@@ -3065,10 +1982,6 @@ class StructuralNavigation:
     ########################
 
     def _visitedLinkBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst visited links.
-        """
-
         bindings = {}
         prevDesc = cmdnames.VISITED_LINK_PREV
         bindings["previous"] = ["v", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -3081,68 +1994,27 @@ class StructuralNavigation:
 
         return bindings
 
-    def _visitedLinkCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating visited links
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_LINK]
-        state = [pyatspi.STATE_VISITED, pyatspi.STATE_FOCUSABLE]
-        stateMatch = collection.MATCH_ALL
-        return MatchCriteria(collection,
-                             states=state,
-                             matchStates=stateMatch,
-                             roles=role)
-
-    def _visitedLinkPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a visited link.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        isMatch = False
-
-        if obj and obj.getRole() == pyatspi.ROLE_LINK:
-            state = obj.getState()
-            isMatch = state.contains(pyatspi.STATE_VISITED) \
-                and state.contains(pyatspi.STATE_FOCUSABLE)
-
-        return isMatch
+    def _visitedLinkGetter(self, document, arg=None):
+        return AXUtilities.find_all_visited_links(document)
 
     def _visitedLinkPresentation(self, obj, arg=None):
-        """Presents the visited link or indicates that one was not
-        found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_VISITED_LINKS
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _visitedLinkDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_LINK]
         columnHeaders.append(guilabels.SN_HEADER_URI)
 
         def rowData(obj):
-            return [self._getText(obj), self._script.utilities.uri(obj)]
+            return [self._getText(obj), AXHypertext.get_link_uri(obj)]
 
         return guilabels.SN_TITLE_VISITED_LINK, columnHeaders, rowData
 
@@ -3153,10 +2025,6 @@ class StructuralNavigation:
     ########################
 
     def _linkBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst links.
-        """
-
         bindings = {}
         prevDesc = cmdnames.LINK_PREV
         bindings["previous"] = ["k", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -3168,57 +2036,20 @@ class StructuralNavigation:
         bindings["list"] = ["k", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _linkCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating unvisited links
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        role = [pyatspi.ROLE_LINK]
-        state = [pyatspi.STATE_FOCUSABLE]
-        stateMatch = collection.MATCH_ALL
-        return MatchCriteria(collection,
-                             states=state,
-                             matchStates=stateMatch,
-                             roles=role)
-
-    def _linkPredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is an link.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        isMatch = False
-        if obj and obj.getRole() == pyatspi.ROLE_LINK:
-            state = obj.getState()
-            isMatch = not state.contains(pyatspi.STATE_FOCUSABLE)
-        return isMatch
+    def _linkGetter(self, document, arg=None):
+        return AXUtilities.find_all_links(document)
 
     def _linkPresentation(self, obj, arg=None):
-        """Presents the link or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        else:
+        if obj is None:
             full = messages.NO_MORE_LINKS
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _linkDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_LINK]
@@ -3228,7 +2059,7 @@ class StructuralNavigation:
         def rowData(obj):
             return [self._getText(obj),
                     self._getState(obj),
-                    self._script.utilities.uri(obj)]
+                    AXHypertext.get_link_uri(obj)]
 
         return guilabels.SN_TITLE_LINK, columnHeaders, rowData
 
@@ -3239,9 +2070,6 @@ class StructuralNavigation:
     ########################
 
     def _clickableBindings(self):
-        """Returns a dictionary of [keysymstring, modifiers, description]
-        lists for navigating amongst "clickable" objects."""
-
         bindings = {}
         prevDesc = cmdnames.CLICKABLE_PREV
         bindings["previous"] = ["a", keybindings.SHIFT_MODIFIER_MASK, prevDesc]
@@ -3253,57 +2081,25 @@ class StructuralNavigation:
         bindings["list"] = ["a", keybindings.SHIFT_ALT_MODIFIER_MASK, listDesc]
         return bindings
 
-    def _clickableCriteria(self, collection, arg=None):
-        """Returns the MatchCriteria to be used for locating clickables
-        by collection.
-
-        Arguments:
-        - collection: the collection interface for the document
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        interfaces = ["action"]
-        interfaceMatch = collection.MATCH_ANY
-        state = [pyatspi.STATE_FOCUSABLE]
-        stateMatch = collection.MATCH_NONE
-
-        return MatchCriteria(collection,
-                             states=state,
-                             matchStates=stateMatch,
-                             interfaces=interfaces,
-                             matchInterfaces=interfaceMatch,
-                             applyPredicate=True)
+    def _clickableCriteria(self, arg=None):
+        return AXCollection.create_match_rule(
+            interfaces=["action"],
+            interface_match_type=Atspi.CollectionMatchType.ANY)
 
     def _clickablePredicate(self, obj, arg=None):
-        """The predicate to be used for verifying that the object
-        obj is a clickable.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
         return self._script.utilities.isClickableElement(obj)
 
     def _clickablePresentation(self, obj, arg=None):
-        """Presents the clickable or indicates that one was not found.
-
-        Arguments:
-        - obj: the accessible object under consideration.
-        - arg: an optional argument which may need to be included in
-          the criteria (e.g. the level of a heading).
-        """
-
-        if obj:
-            [obj, characterOffset] = self._getCaretPosition(obj)
-            self._setCaretPosition(obj, characterOffset)
-            self._presentObject(obj, characterOffset)
-        elif not arg:
+        if obj is None:
             full = messages.NO_MORE_CLICKABLES
             brief = messages.STRUCTURAL_NAVIGATION_NOT_FOUND
             self._script.presentMessage(full, brief)
+            return
+
+        if self._presentWithSayAll(obj, 0):
+            return
+
+        self._script.presentObject(obj, offset=0, interrupt=True)
 
     def _clickableDialogData(self):
         columnHeaders = [guilabels.SN_HEADER_CLICKABLE]
@@ -3330,23 +2126,19 @@ class StructuralNavigation:
 
         return bindings
 
-    def _containerCriteria(self, collection, arg=None):
-        return MatchCriteria(collection, roles=self.CONTAINER_ROLES, applyPredicate=True)
+    def _containerCriteria(self, arg=None):
+        return AXCollection.create_match_rule(roles=self.CONTAINER_ROLES)
 
     def _containerPredicate(self, obj, arg=None):
         return self._isContainer(obj)
 
     def _containerPresentation(self, obj, arg=None, **kwargs):
-        if not obj:
+        if obj is None:
             self._script.presentMessage(messages.CONTAINER_NOT_IN_A)
             return
 
         if kwargs.get("sameContainer"):
             self._script.presentMessage(messages.CONTAINER_END)
 
-        characterOffset = arg
-        if characterOffset is None:
-            obj, characterOffset = self._getCaretPosition(obj)
-
-        self._setCaretPosition(obj, characterOffset)
+        characterOffset = arg or 0
         self._presentLine(obj, characterOffset)

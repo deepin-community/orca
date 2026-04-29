@@ -27,94 +27,56 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2013 The Orca Team."
 __license__   = "LGPL"
 
-import pyatspi
-
-import orca.keybindings as keybindings
-import orca.orca as orca
-import orca.orca_state as orca_state
-import orca.scripts.toolkits.gtk as gtk
+from orca import keybindings
+from orca import settings
+from orca import settings_manager
+from orca.scripts.toolkits import gtk
 from orca.structural_navigation import StructuralNavigation
 
-########################################################################
-#                                                                      #
-# The evince script class.                                             #
-#                                                                      #
-########################################################################
-
 class Script(gtk.Script):
+    """Custom script for evince."""
 
-    def __init__(self, app):
-        """Creates a new script for the given application.
+    def setup_input_event_handlers(self):
+        """Defines the input event handlers for this script."""
 
-        Arguments:
-        - app: the application to create a script for.
-        """
+        super().setup_input_event_handlers()
+        self.input_event_handlers.update(self.structural_navigation.get_handlers(True))
 
-        gtk.Script.__init__(self, app)
-
-    def setupInputEventHandlers(self):
-        """Defines InputEventHandler fields for this script that can be
-        called by the key and braille bindings."""
-
-        gtk.Script.setupInputEventHandlers(self)
-        self.inputEventHandlers.update(
-            self.structuralNavigation.inputEventHandlers)
-
-    def getAppKeyBindings(self):
+    def get_app_key_bindings(self):
         """Returns the application-specific keybindings for this script."""
 
-        keyBindings = keybindings.KeyBindings()
-        bindings = self.structuralNavigation.keyBindings
-        for keyBinding in bindings.keyBindings:
-            keyBindings.add(keyBinding)
+        bindings = keybindings.KeyBindings()
 
-        return keyBindings
+        layout = settings_manager.get_manager().get_setting('keyboardLayout')
+        is_desktop = layout == settings.GENERAL_KEYBOARD_LAYOUT_DESKTOP
 
-    def getStructuralNavigation(self):
+        struct_nav_bindings = self.structural_navigation.get_bindings(
+            refresh=True, is_desktop=is_desktop)
+        for binding in struct_nav_bindings.key_bindings:
+            bindings.add(binding)
+
+        return bindings
+
+    def get_structural_navigation(self):
         """Returns the 'structural navigation' class for this script."""
 
-        types = self.getEnabledStructuralNavigationTypes()
+        types = self.get_enabled_structural_navigation_types()
         return StructuralNavigation(self, types, True)
 
-    def getEnabledStructuralNavigationTypes(self):
-        """Returns a list of the structural navigation object types
-        enabled in this script."""
+    def get_enabled_structural_navigation_types(self):
+        """Returns a list of the structural navigation object types enabled in this script."""
 
-        enabledTypes = [StructuralNavigation.BUTTON,
-                        StructuralNavigation.CHECK_BOX,
-                        StructuralNavigation.COMBO_BOX,
-                        StructuralNavigation.ENTRY,
-                        StructuralNavigation.FORM_FIELD,
-                        StructuralNavigation.HEADING,
-                        StructuralNavigation.LINK,
-                        StructuralNavigation.LIST,
-                        StructuralNavigation.LIST_ITEM,
-                        StructuralNavigation.PARAGRAPH,
-                        StructuralNavigation.RADIO_BUTTON,
-                        StructuralNavigation.TABLE,
-                        StructuralNavigation.TABLE_CELL,
-                        StructuralNavigation.UNVISITED_LINK,
-                        StructuralNavigation.VISITED_LINK]
-
-        return enabledTypes
-
-    def useStructuralNavigationModel(self):
-        """Returns True if we should do our own structural navigation."""
-
-        if not self.structuralNavigation.enabled:
-            return False
-
-        states = orca_state.locusOfFocus.getState()
-        if states.contains(pyatspi.STATE_EDITABLE):
-            return False
-
-        return True
-
-    def onCaretMoved(self, event):
-        """Callback for object:text-caret-moved accessibility events."""
-
-        obj = event.source
-        if obj.getState().contains(pyatspi.STATE_FOCUSED):
-            orca.setLocusOfFocus(event, event.source, False)
-
-        gtk.Script.onCaretMoved(self, event)
+        return [StructuralNavigation.BUTTON,
+                StructuralNavigation.CHECK_BOX,
+                StructuralNavigation.COMBO_BOX,
+                StructuralNavigation.ENTRY,
+                StructuralNavigation.FORM_FIELD,
+                StructuralNavigation.HEADING,
+                StructuralNavigation.LINK,
+                StructuralNavigation.LIST,
+                StructuralNavigation.LIST_ITEM,
+                StructuralNavigation.PARAGRAPH,
+                StructuralNavigation.RADIO_BUTTON,
+                StructuralNavigation.TABLE,
+                StructuralNavigation.UNVISITED_LINK,
+                StructuralNavigation.VISITED_LINK]

@@ -25,19 +25,19 @@ __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2010-2011 The Orca Team"
 __license__   = "LGPL"
 
-import pyatspi
-
 from . import cmdnames
 from . import debug
+from . import focus_manager
+from . import input_event_manager
 from . import guilabels
 from . import input_event
 from . import keybindings
 from . import messages
-from . import orca_state
+from . import script_manager
 from . import settings
 from . import settings_manager
-
-_settingsManager = settings_manager.getManager()
+from .ax_object import AXObject
+from .ax_utilities import AXUtilities
 
 #############################################################################
 #                                                                           #
@@ -268,7 +268,7 @@ class ConversationList:
         #
         try:
             self.conversations.remove(conversation)
-        except:
+        except Exception:
             return False
         else:
             return True
@@ -280,23 +280,10 @@ class ConversationList:
 #############################################################################
 
 class Chat:
-    """This class implements the chat functionality which is available to
-    scripts.
-    """
+    """Provides chat functionality available to scripts for chat apps."""
 
-    def __init__(self, script, buddyListAncestries):
-        """Creates an instance of the Chat class.
-
-        Arguments:
-        - script: the script with which this instance is associated.
-        - buddyListAncestries: a list of lists of pyatspi roles beginning
-          with the object serving as the actual buddy list (e.g.
-          ROLE_TREE_TABLE) and ending with the top level object (e.g.
-          ROLE_FRAME).
-        """
-
+    def __init__(self, script):
         self._script = script
-        self._buddyListAncestries = buddyListAncestries
 
         # Keybindings to provide conversation message history. The message
         # review order will be based on the index within the list. Thus F1
@@ -309,9 +296,9 @@ class Chat:
         self.messageKeys = \
             ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9"]
         self.messageKeyModifier = keybindings.ORCA_MODIFIER_MASK
-        self.inputEventHandlers = {}
-        self.setupInputEventHandlers()
-        self.keyBindings = self.getKeyBindings()
+        self.input_event_handlers = {}
+        self.setup_input_event_handlers()
+        self.key_bindings = self.get_key_bindings()
 
         # The length of the message history will be based on how many keys
         # are bound to the task of providing it.
@@ -319,8 +306,6 @@ class Chat:
         self.messageListLength = len(self.messageKeys)
         self._conversationList = ConversationList(self.messageListLength)
 
-        # To make pylint happy.
-        #
         self.focusedChannelRadioButton = None
         self.allChannelsRadioButton = None
         self.allMessagesRadioButton = None
@@ -328,61 +313,56 @@ class Chat:
         self.chatRoomHistoriesCheckButton = None
         self.speakNameCheckButton = None
 
-    def setupInputEventHandlers(self):
-        """Defines InputEventHandler fields for chat functions which
-        will be used by the script associated with this chat instance."""
+    def setup_input_event_handlers(self):
+        """Defines the input event handlers for this chat instance."""
 
-        self.inputEventHandlers["togglePrefixHandler"] = \
+        self.input_event_handlers["togglePrefixHandler"] = \
             input_event.InputEventHandler(
                 self.togglePrefix,
                 cmdnames.CHAT_TOGGLE_ROOM_NAME_PREFIX)
 
-        self.inputEventHandlers["toggleBuddyTypingHandler"] = \
+        self.input_event_handlers["toggleBuddyTypingHandler"] = \
             input_event.InputEventHandler(
                 self.toggleBuddyTyping,
                 cmdnames.CHAT_TOGGLE_BUDDY_TYPING)
 
-        self.inputEventHandlers["toggleMessageHistoriesHandler"] = \
+        self.input_event_handlers["toggleMessageHistoriesHandler"] = \
             input_event.InputEventHandler(
                 self.toggleMessageHistories,
                 cmdnames.CHAT_TOGGLE_MESSAGE_HISTORIES)
 
-        self.inputEventHandlers["reviewMessage"] = \
+        self.input_event_handlers["reviewMessage"] = \
             input_event.InputEventHandler(
                 self.readPreviousMessage,
                 cmdnames.CHAT_PREVIOUS_MESSAGE)
 
         return
 
-    def getKeyBindings(self):
-        """Defines the chat-related key bindings which will be used by
-        the script associated with this chat instance.
-
-        Returns: an instance of keybindings.KeyBindings.
-        """
+    def get_key_bindings(self):
+        """Defines and returns the key bindings for this script."""
 
         keyBindings = keybindings.KeyBindings()
 
         keyBindings.add(
             keybindings.KeyBinding(
                 "",
-                keybindings.defaultModifierMask,
+                keybindings.DEFAULT_MODIFIER_MASK,
                 keybindings.NO_MODIFIER_MASK,
-                self.inputEventHandlers["togglePrefixHandler"]))
+                self.input_event_handlers["togglePrefixHandler"]))
 
         keyBindings.add(
             keybindings.KeyBinding(
                 "",
-                keybindings.defaultModifierMask,
+                keybindings.DEFAULT_MODIFIER_MASK,
                 keybindings.NO_MODIFIER_MASK,
-                self.inputEventHandlers["toggleBuddyTypingHandler"]))
+                self.input_event_handlers["toggleBuddyTypingHandler"]))
 
         keyBindings.add(
             keybindings.KeyBinding(
                 "",
-                keybindings.defaultModifierMask,
+                keybindings.DEFAULT_MODIFIER_MASK,
                 keybindings.NO_MODIFIER_MASK,
-                self.inputEventHandlers["toggleMessageHistoriesHandler"]))
+                self.input_event_handlers["toggleMessageHistoriesHandler"]))
 
         for messageKey in self.messageKeys:
             keyBindings.add(
@@ -390,33 +370,35 @@ class Chat:
                     messageKey,
                     self.messageKeyModifier,
                     keybindings.ORCA_MODIFIER_MASK,
-                    self.inputEventHandlers["reviewMessage"]))
+                    self.input_event_handlers["reviewMessage"]))
 
         return keyBindings
 
-    def getAppPreferencesGUI(self):
+    def get_app_preferences_gui(self):
         """Return a GtkGrid containing the application unique configuration
         GUI items for the current application. """
 
+        import gi
+        gi.require_version("Gtk", "3.0")
         from gi.repository import Gtk
 
         grid = Gtk.Grid()
         grid.set_border_width(12)
 
         label = guilabels.CHAT_SPEAK_ROOM_NAME
-        value = _settingsManager.getSetting('chatSpeakRoomName')
+        value = settings_manager.get_manager().get_setting('chatSpeakRoomName')
         self.speakNameCheckButton = Gtk.CheckButton.new_with_mnemonic(label)
         self.speakNameCheckButton.set_active(value)
         grid.attach(self.speakNameCheckButton, 0, 0, 1, 1)
 
         label = guilabels.CHAT_ANNOUNCE_BUDDY_TYPING
-        value = _settingsManager.getSetting('chatAnnounceBuddyTyping')
+        value = settings_manager.get_manager().get_setting('chatAnnounceBuddyTyping')
         self.buddyTypingCheckButton = Gtk.CheckButton.new_with_mnemonic(label)
         self.buddyTypingCheckButton.set_active(value)
         grid.attach(self.buddyTypingCheckButton, 0, 1, 1, 1)
 
         label = guilabels.CHAT_SEPARATE_MESSAGE_HISTORIES
-        value = _settingsManager.getSetting('chatRoomHistories')
+        value = settings_manager.get_manager().get_setting('chatRoomHistories')
         self.chatRoomHistoriesCheckButton = \
             Gtk.CheckButton.new_with_mnemonic(label)
         self.chatRoomHistoriesCheckButton.set_active(value)
@@ -424,7 +406,7 @@ class Chat:
 
         messagesFrame = Gtk.Frame()
         grid.attach(messagesFrame, 0, 3, 1, 1)
-        label = Gtk.Label("<b>%s</b>" % guilabels.CHAT_SPEAK_MESSAGES_FROM)
+        label = Gtk.Label(f"<b>{guilabels.CHAT_SPEAK_MESSAGES_FROM}</b>")
         label.set_use_markup(True)
         messagesFrame.set_label_widget(label)
 
@@ -434,7 +416,7 @@ class Chat:
         messagesGrid = Gtk.Grid()
         messagesAlignment.add(messagesGrid)
 
-        value = _settingsManager.getSetting('chatMessageVerbosity')
+        value = settings_manager.get_manager().get_setting('chatMessageVerbosity')
 
         label = guilabels.CHAT_SPEAK_MESSAGES_ALL
         rb1 = Gtk.RadioButton.new_with_mnemonic(None, label)
@@ -450,7 +432,7 @@ class Chat:
         messagesGrid.attach(self.focusedChannelRadioButton, 0, 1, 1, 1)
 
         label = guilabels.CHAT_SPEAK_MESSAGES_ALL_IF_FOCUSED % \
-            self._script.app.name
+            AXObject.get_name(self._script.app)
         rb3 = Gtk.RadioButton.new_with_mnemonic(None, label)
         rb3.join_group(rb1)
         rb3.set_active(value == settings.CHAT_SPEAK_ALL_IF_FOCUSED)
@@ -461,7 +443,7 @@ class Chat:
 
         return grid
 
-    def getPreferencesFromGUI(self):
+    def get_preferences_from_gui(self):
         """Returns a dictionary with the app-specific preferences."""
 
         if self.allChannelsRadioButton.get_active():
@@ -494,8 +476,8 @@ class Chat:
         """
 
         line = messages.CHAT_ROOM_NAME_PREFIX_ON
-        speakRoomName = _settingsManager.getSetting('chatSpeakRoomName')
-        _settingsManager.setSetting('chatSpeakRoomName', not speakRoomName)
+        speakRoomName = settings_manager.get_manager().get_setting('chatSpeakRoomName')
+        settings_manager.get_manager().set_setting('chatSpeakRoomName', not speakRoomName)
         if speakRoomName:
             line = messages.CHAT_ROOM_NAME_PREFIX_OFF
         self._script.presentMessage(line)
@@ -511,8 +493,8 @@ class Chat:
         """
 
         line = messages.CHAT_BUDDY_TYPING_ON
-        announceTyping = _settingsManager.getSetting('chatAnnounceBuddyTyping')
-        _settingsManager.setSetting(
+        announceTyping = settings_manager.get_manager().get_setting('chatAnnounceBuddyTyping')
+        settings_manager.get_manager().set_setting(
             'chatAnnounceBuddyTyping', not announceTyping)
         if announceTyping:
             line = messages.CHAT_BUDDY_TYPING_OFF
@@ -529,8 +511,8 @@ class Chat:
         """
 
         line = messages.CHAT_SEPARATE_HISTORIES_ON
-        roomHistories = _settingsManager.getSetting('chatRoomHistories')
-        _settingsManager.setSetting('chatRoomHistories', not roomHistories)
+        roomHistories = settings_manager.get_manager().get_setting('chatRoomHistories')
+        settings_manager.get_manager().set_setting('chatRoomHistories', not roomHistories)
         if roomHistories:
             line = messages.CHAT_SEPARATE_HISTORIES_OFF
         self._script.presentMessage(line)
@@ -545,20 +527,20 @@ class Chat:
         - inputEvent: if not None, the input event that caused this action.
         - index: The index of the message to read -- by default, the most
           recent message. If we get an inputEvent, however, the value of
-          index is ignored and the index of the event_string with respect
+          index is ignored and the index of the keyval_name with respect
           to self.messageKeys is used instead.
         """
 
         try:
-            index = self.messageKeys.index(inputEvent.event_string)
-        except:
+            index = self.messageKeys.index(inputEvent.keyval_name)
+        except Exception:
             pass
 
         messageNumber = self.messageListLength - (index + 1)
         message, chatRoomName = None, None
 
-        if _settingsManager.getSetting('chatRoomHistories'):
-            conversation = self.getConversation(orca_state.locusOfFocus)
+        if settings_manager.get_manager().get_setting('chatRoomHistories'):
+            conversation = self.getConversation(focus_manager.get_manager().get_locus_of_focus())
             if conversation:
                 message = conversation.getNthMessage(messageNumber)
                 chatRoomName = conversation.name
@@ -583,8 +565,10 @@ class Chat:
         # Only speak/braille the new message if it matches how the user
         # wants chat messages spoken.
         #
-        verbosity = _settingsManager.getAppSetting(self._script.app, 'chatMessageVerbosity')
-        if orca_state.activeScript.name != self._script.name \
+        verbosity = settings_manager.get_manager().get_app_setting(
+            self._script.app, 'chatMessageVerbosity')
+        script = script_manager.get_manager().get_active_script()
+        if script.name != self._script.name \
            and verbosity == settings.CHAT_SPEAK_ALL_IF_FOCUSED:
             return
         elif not focused and verbosity == settings.CHAT_SPEAK_FOCUSED_CHANNEL:
@@ -592,16 +576,16 @@ class Chat:
 
         text = ""
         if chatRoomName and \
-           _settingsManager.getAppSetting(self._script.app, 'chatSpeakRoomName'):
+           settings_manager.get_manager().get_app_setting(self._script.app, 'chatSpeakRoomName'):
             text = messages.CHAT_MESSAGE_FROM_ROOM % chatRoomName
 
         if not settings.presentChatRoomLast:
-            text = self._script.utilities.appendString(text, message)
+            text = f"{text} {message}"
         else:
-            text = self._script.utilities.appendString(message, text)
+            text = f"{message} {text}"
 
         if len(text.strip()):
-            voice = self._script.speechGenerator.voice(string=text)
+            voice = self._script.speech_generator.voice(string=text)
             self._script.speakMessage(text, voice=voice)
         self._script.displayBrailleMessage(text)
 
@@ -655,12 +639,6 @@ class Chat:
             return True
 
         elif self.isChatRoomMsg(event.source):
-            # We always automatically go back to focus tracking mode when
-            # someone sends us a message.
-            #
-            if self._script.flatReviewContext:
-                self._script.toggleFlatReviewMode()
-
             if self.isNewConversation(event.source):
                 name = self.getChatRoomName(event.source)
                 conversation = Conversation(name, event.source)
@@ -683,7 +661,7 @@ class Chat:
 
         elif self.isAutoCompletedTextEvent(event):
             text = event.any_data
-            voice = self._script.speechGenerator.voice(string=text)
+            voice = self._script.speech_generator.voice(string=text)
             self._script.speakMessage(text, voice=voice)
             return True
 
@@ -700,10 +678,10 @@ class Chat:
         Returns True if we spoke the change; False otherwise
         """
 
-        if _settingsManager.getSetting('chatAnnounceBuddyTyping'):
+        if settings_manager.get_manager().get_setting('chatAnnounceBuddyTyping'):
             conversation = self.getConversation(event.source)
             if conversation and (status != conversation.getTypingStatus()):
-                voice = self._script.speechGenerator.voice(string=status)
+                voice = self._script.speech_generator.voice(string=status)
                 self._script.speakMessage(status, voice=voice)
                 conversation.setTypingStatus(status)
                 return True
@@ -738,51 +716,45 @@ class Chat:
         - obj: the accessible object to examine.
         """
 
-        state = obj.getState()
-        if state.contains(pyatspi.STATE_EDITABLE) \
-           and state.contains(pyatspi.STATE_SINGLE_LINE):
-            return True
+        return AXUtilities.is_editable(obj) and AXUtilities.is_single_line(obj)
 
-        return False
+    def _is_scrollable_list(self, obj):
+        """Returns True if obj is a list-like scrollable widget."""
+
+        scroll_pane = AXObject.find_ancestor(obj, AXUtilities.is_scroll_pane)
+        if not scroll_pane:
+            return False
+
+        return AXUtilities.is_tree_or_tree_table(obj) \
+            or AXUtilities.is_list_box(obj) or AXUtilities.is_list(obj)
 
     def isBuddyList(self, obj):
-        """Returns True if obj is the list of buddies in the buddy list
-        window. Note that this method relies upon a hierarchical check,
-        using a list of hierarchies provided by the script. Scripts
-        which have more reliable means of identifying the buddy list
-        can override this method.
+        """Returns True if obj is believed to be the buddy list."""
 
-        Arguments:
-        - obj: the accessible being examined
-        """
+        # Note: This is a very simple heuristic based on existing chat apps.
+        # Subclasses can override this function.
 
-        if obj:
-            for roleList in self._buddyListAncestries:
-                if self._script.utilities.hasMatchingHierarchy(obj, roleList):
-                    return True
+        if not self._is_scrollable_list(obj):
+            return False
 
-        return False
+        if AXObject.find_ancestor(obj, AXUtilities.is_frame) is None:
+            return False
+
+        tokens = ["CHAT:", obj, "believed to be buddy list."]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+        return True
 
     def isInBuddyList(self, obj, includeList=True):
-        """Returns True if obj is, or is inside of, the buddy list.
-
-        Arguments:
-        - obj: the accessible being examined
-        - includeList: whether or not the list itself should be
-          considered "in" the buddy list.
-        """
+        """Returns True if obj is, or is inside of, the buddy list."""
 
         if includeList and self.isBuddyList(obj):
             return True
 
-        for roleList in self._buddyListAncestries:
-            buddyListRole = roleList[0]
-            candidate = self._script.utilities.ancestorWithRole(
-                obj, [buddyListRole], [pyatspi.ROLE_FRAME])
-            if self.isBuddyList(candidate):
-                return True
+        buddy_list =  AXObject.find_ancestor(obj, self._is_scrollable_list)
+        if buddy_list is None:
+            return False
 
-        return False
+        return self.isBuddyList(buddy_list)
 
     def isNewConversation(self, obj):
         """Returns True if the given accessible is the chat history
@@ -816,17 +788,14 @@ class Chat:
         # things working. And people should not be in multiple chat
         # rooms with identical names anyway. :-)
         #
-        if obj.getRole() in [pyatspi.ROLE_TEXT, pyatspi.ROLE_ENTRY] \
-           and obj.getState().contains(pyatspi.STATE_EDITABLE):
+        if (AXUtilities.is_text(obj) or AXUtilities.is_entry(obj)) \
+           and AXUtilities.is_editable(obj):
             name = self.getChatRoomName(obj)
 
         for conversation in self._conversationList.conversations:
             if name:
                 if name == conversation.name:
                     return conversation
-            # Doing an equality check seems to be preferable here to
-            # utilities.isSameObject as a result of false positives.
-            #
             elif obj == conversation.accHistory:
                 return conversation
 
@@ -840,13 +809,8 @@ class Chat:
         - obj: the accessible object to examine.
         """
 
-        if obj and obj.getRole() == pyatspi.ROLE_TEXT \
-           and obj.parent.getRole() == pyatspi.ROLE_SCROLL_PANE:
-            state = obj.getState()
-            if not state.contains(pyatspi.STATE_EDITABLE) \
-               and state.contains(pyatspi.STATE_MULTI_LINE):
-                return True
-
+        if AXUtilities.is_text(obj) and AXUtilities.is_scroll_pane(AXObject.get_parent(obj)):
+            return not AXUtilities.is_editable(obj) and AXUtilities.is_multi_line(obj)
         return False
 
     def isFocusedChat(self, obj):
@@ -858,14 +822,14 @@ class Chat:
         - obj: the accessible object to examine.
         """
 
-        if obj and obj.getState().contains(pyatspi.STATE_SHOWING):
+        if AXUtilities.is_showing(obj):
             active = self._script.utilities.topLevelObjectIsActiveAndCurrent(obj)
-            msg = "INFO: %s's window is focused chat: %s" % (obj, active)
-            debug.println(debug.LEVEL_INFO, msg, True)
+            tokens = ["INFO:", obj, "'s window is focused chat:", active]
+            debug.print_tokens(debug.LEVEL_INFO, tokens, True)
             return active
 
-        msg = "INFO: %s is not focused chat (not showing)" % obj
-        debug.println(debug.LEVEL_INFO, msg, True)
+        tokens = ["INFO:", obj, "is not focused chat (not showing)"]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
         return False
 
     def getChatRoomName(self, obj):
@@ -882,33 +846,15 @@ class Chat:
         # that, we'll look at the frame name. Failing that, scripts
         # should override this method. :-)
         #
-        ancestor = self._script.utilities.ancestorWithRole(
-            obj,
-            [pyatspi.ROLE_PAGE_TAB, pyatspi.ROLE_FRAME],
-            [pyatspi.ROLE_APPLICATION])
-        name = ""
-        try:
-            text = self._script.utilities.displayedText(ancestor)
-            if text.lower().strip() != self._script.name.lower().strip():
-                name = text
-        except:
-            pass
+        def pred(x):
+            if not (AXUtilities.is_page_tab(x) or AXUtilities.is_frame(x)):
+                return False
+            return bool(AXObject.get_name(x))
 
-        # Some applications don't trash their page tab list when there is
-        # only one active chat, but instead they remove the text or hide
-        # the item. Therefore, we'll give it one more shot.
-        #
-        if not name:
-            ancestor = self._script.utilities.ancestorWithRole(
-                ancestor, [pyatspi.ROLE_FRAME], [pyatspi.ROLE_APPLICATION])
-            try:
-                text = self._script.utilities.displayedText(ancestor)
-                if text.lower().strip() != self._script.name.lower().strip():
-                    name = text
-            except:
-                pass     
-
-        return name
+        ancestor = AXObject.find_ancestor(obj, pred)
+        if ancestor:
+            return AXObject.get_name(ancestor)
+        return ""
 
     def isAutoCompletedTextEvent(self, event):
         """Returns True if event is associated with text being autocompleted.
@@ -917,11 +863,11 @@ class Chat:
         - event: the accessible event being examined
         """
 
-        if event.source.getRole() != pyatspi.ROLE_TEXT:
+        if not AXUtilities.is_text(event.source):
             return False
 
-        lastKey, mods = self._script.utilities.lastKeyAndModifiers()
-        if lastKey == "Tab" and event.any_data and event.any_data != "\t":
+        if input_event_manager.get_manager().last_event_was_tab() \
+           and event.any_data and event.any_data != "\t":
             return True
 
         return False

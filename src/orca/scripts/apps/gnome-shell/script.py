@@ -20,217 +20,104 @@
 # Free Software Foundation, Inc., Franklin Street, Fifth Floor,
 # Boston MA  02110-1301 USA.
 
+"""Custom script for gnome-shell."""
+
 __id__        = "$Id$"
 __version__   = "$Revision$"
 __date__      = "$Date$"
 __copyright__ = "Copyright (c) 2010-2013 Igalia, S.L."
 __license__   = "LGPL"
 
-import pyatspi
-import time
+from orca import debug
+from orca import focus_manager
+from orca.scripts import default
+from orca.ax_object import AXObject
+from orca.ax_utilities import AXUtilities
 
-import orca.orca as orca
-import orca.scripts.toolkits.clutter as clutter
-
-from .formatting import Formatting
 from .script_utilities import Utilities
 
-class Script(clutter.Script):
 
-    def __init__(self, app):
-        clutter.Script.__init__(self, app)
-        self._activeDialog = (None, 0) # (Accessible, Timestamp)
-        self._activeDialogLabels = {}  # key == hash(obj), value == name
+class Script(default.Script):
+    """Custom script for gnome-shell."""
 
-    def getFormatting(self):
-        """Returns the formatting strings for this script."""
-        return Formatting(self)
+    def get_utilities(self):
+        """Returns the utilities for this script."""
 
-    def getUtilities(self):
         return Utilities(self)
 
-    def skipObjectEvent(self, event):
-        """Determines whether or not this event should be skipped due to
-        being redundant, part of an event flood, etc."""
+    def is_activatable_event(self, event):
+        """Returns True if event should cause this script to become active."""
 
-        try:
-            role = event.source.getRole()
-        except:
-            pass
-        else:
-            # We must handle all dialogs ourselves in this script.
-            if role == pyatspi.ROLE_DIALOG:
-                return False
-
-            if role == pyatspi.ROLE_WINDOW:
-                return self.utilities.isBogusWindowFocusClaim(event)
-
-        return clutter.Script.skipObjectEvent(self, event)
-
-    def _presentDialogLabel(self, event):
-        try:
-            role = event.source.getRole()
-            name = event.source.name
-        except:
-            return False
-
-        activeDialog, timestamp = self._activeDialog
-        if not activeDialog or role != pyatspi.ROLE_LABEL:
-            return False
-
-        obj = hash(event.source)
-        if name == self._activeDialogLabels.get(obj):
+        if event.type.startswith("object:state-changed:selected") and event.detail1:
             return True
 
-        isDialog = lambda x: x and x.getRole() == pyatspi.ROLE_DIALOG
-        parentDialog = pyatspi.utils.findAncestor(event.source, isDialog)
-        if activeDialog == parentDialog:
-            self.presentMessage(name)
-            self._activeDialogLabels[obj] = name
-            return True
+        return super().is_activatable_event(event)
 
-        return False
+    def locus_of_focus_changed(self, event, old_focus, new_focus):
+        """Handles changes of focus of interest to the script."""
 
-    def onNameChanged(self, event):
-        """Callback for object:property-change:accessible-name events."""
-
-        if self._presentDialogLabel(event):
-            return
-
-        clutter.Script.onNameChanged(self, event)
-
-    def onShowingChanged(self, event):
-        """Callback for object:state-changed:showing accessibility events."""
-
-        if not event.detail1:
-            return
-
-        try:
-            role = event.source.getRole()
-            name = event.source.name
-        except:
-            return
-
-        # When entering overview with many open windows, we get quite
-        # a few state-changed:showing events for nameless panels. The
-        # act of processing these by the default script causes us to
-        # present nothing, and introduces a significant delay before
-        # presenting the Top Bar button when Ctrl+Alt+Tab was pressed.
-        if role == pyatspi.ROLE_PANEL and not name:
-            return
-
-        # We cannot count on events or their order from dialog boxes.
-        # Therefore, the only way to reliably present a dialog is by
-        # ignoring the events of the dialog itself and keeping track
-        # of the current dialog.
-        activeDialog, timestamp = self._activeDialog
-        if not event.detail1 and event.source == activeDialog:
-            self._activeDialog = (None, 0)
-            self._activeDialogLabels = {}
-            return
-
-        if activeDialog and role == pyatspi.ROLE_LABEL and event.detail1:
-            if self._presentDialogLabel(event):
+        # TODO - JD: This workaround no longer works because the window has a name.
+        if event is not None and event.type == "window:activate" \
+          and new_focus is not None and not AXObject.get_name(new_focus):
+            queued_event = self._get_queued_event("object:state-changed:focused", True)
+            if queued_event and queued_event.source != event.source:
+                msg = "GNOME SHELL: Have matching focused event. Not announcing nameless window."
+                debug.print_message(debug.LEVEL_INFO, msg, True)
                 return
 
-        clutter.Script.onShowingChanged(self, event)
+        super().locus_of_focus_changed(event, old_focus, new_focus)
 
-    def onSelectedChanged(self, event):
-        """Callback for object:state-changed:selected accessibility events."""
-        try:
-            state = event.source.getState()
-            role = event.source.getRole()
-        except:
-            return
-
-        # Some buttons, like the Wikipedia button, claim to be selected but
-        # lack STATE_SELECTED. The other buttons, such as in the Dash and
-        # event switcher, seem to have the right state. Since the ones with
-        # the wrong state seem to be things we don't want to present anyway
-        # we'll stop doing so and hope we are right.
-
-        if event.detail1:
-            if role == pyatspi.ROLE_PANEL:
-                try:
-                    event.source.clearCache()
-                except:
-                    pass
-
-            if state.contains(pyatspi.STATE_SELECTED):
-                orca.setLocusOfFocus(event, event.source)
-            return
-
-        clutter.Script.onSelectedChanged(self, event)
-
-    def onFocusedChanged(self, event):
+    def on_focused_changed(self, event):
         """Callback for object:state-changed:focused accessibility events."""
 
         if not event.detail1:
             return
 
-        obj = event.source
-        try:
-            role = obj.getRole()
-            name = obj.name
-        except:
-            return
-
-        # The dialog will get presented when its first child gets focus.
-        if role == pyatspi.ROLE_DIALOG:
-            return
-
         # We're getting a spurious focus claim from the gnome-shell window after
         # the window switcher is used.
-        if role == pyatspi.ROLE_WINDOW:
+        if AXUtilities.is_window(event.source):
             return
 
-        if role == pyatspi.ROLE_MENU_ITEM and not name \
-           and not self.utilities.labelsForObject(obj):
-            isRealFocus = lambda x: x and x.getRole() == pyatspi.ROLE_SLIDER
-            descendant = pyatspi.findDescendant(obj, isRealFocus)
-            if descendant:
-                orca.setLocusOfFocus(event, descendant)
+        focus = focus_manager.get_manager().get_locus_of_focus()
+        if AXUtilities.is_panel(event.source) and AXObject.is_ancestor(focus, event.source):
+            msg = "GNOME SHELL: Event ignored: Source is panel ancestor of current focus."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            return
+
+        if not AXObject.get_name(event.source) and AXUtilities.is_menu_item(event.source) \
+           and not AXUtilities.get_is_labelled_by(event.source):
+            descendant = AXObject.find_descendant(event.source, AXUtilities.is_slider)
+            if descendant is not None:
+                focus_manager.get_manager().set_locus_of_focus(event, descendant)
                 return
 
-        # This is to present dialog boxes which are, to the user, newly
-        # activated. And if something is claiming to be focused that is
-        # not in a dialog, that's good to know as well, so update our
-        # state regardless.
-        activeDialog, timestamp = self._activeDialog
-        if not activeDialog:
-            isDialog = lambda x: x and x.getRole() == pyatspi.ROLE_DIALOG
-            dialog = pyatspi.utils.findAncestor(obj, isDialog)
-            self._activeDialog = (dialog, time.time())
-            if dialog:
-                orca.setLocusOfFocus(None, dialog)
-                labels = self.utilities.unrelatedLabels(dialog)
-                for label in labels:
-                    self._activeDialogLabels[hash(label)] = label.name
+        super().on_focused_changed(event)
 
-        clutter.Script.onFocusedChanged(self, event)
+    def on_name_changed(self, event):
+        """Callback for object:property-change:accessible-name events."""
 
-    def echoPreviousWord(self, obj, offset=None):
-        try:
-            text = obj.queryText()
-        except NotImplementedError:
-            return False
+        if not AXUtilities.is_label(event.source):
+            super().on_name_changed(event)
+            return
 
-        if not offset:
-            if text.caretOffset == -1:
-                offset = text.characterCount - 1
-            else:
-                offset = text.caretOffset - 1
+        # If we're already in a dialog, and a label inside that dialog changes its name,
+        # present the new name. Example: the "Command not found" label in the Run dialog.
+        dialog = AXObject.find_ancestor(
+            focus_manager.get_manager().get_locus_of_focus(), AXUtilities.is_dialog)
+        tokens = ["GNOME SHELL: focus is in dialog:", dialog]
+        debug.print_tokens(debug.LEVEL_INFO, tokens, True)
+        if dialog and AXObject.is_ancestor(event.source, dialog):
+            msg = "GNOME SHELL: Label changed name in current dialog. Presenting."
+            debug.print_message(debug.LEVEL_INFO, msg, True)
+            self.presentMessage(AXObject.get_name(event.source))
 
-        if offset == 0:
-            return False
+    def on_selected_changed(self, event):
+        """Callback for object:state-changed:selected accessibility events."""
 
-        return super().echoPreviousWord(obj, offset)
+        # gnome-shell fails to implement the selection interface but fires state-changed
+        # selected in the switcher and similar containers.
+        if AXUtilities.is_selected(event.source):
+            focus_manager.get_manager().set_locus_of_focus(event, event.source)
+            return
 
-    def isActivatableEvent(self, event):
-        if event.type.startswith('object:state-changed:selected') and event.detail1:
-            return True
-
-        if self.utilities.isBogusWindowFocusClaim(event):
-            return False
-
-        return super().isActivatableEvent(event)
+        super().on_selected_changed(event)
