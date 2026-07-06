@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = remove ]; then
+	# Installed by brltty's brltty-udeb.prebaseconfig
+	rm -f /etc/xdg/lightdm/lightdm.conf.d/80_orca-dm-wrapper.conf
+fi
+
+#DEBHELPER#
